@@ -394,9 +394,6 @@ class Linear(nn.Linear, LoraLayer):
 
             output_a=[]
             for i in range(self.lora_num):
-                if(i==0):
-                    output_a.append(getattr(self, f"lora_A{i}")(self.lora_dropout(only_inputs[i]))*self.scaling[0]*0.5)
-                else:
                     output_a.append(getattr(self, f"lora_A{i}")(self.lora_dropout(only_inputs[i]))*self.scaling[0])
             
             
@@ -418,7 +415,7 @@ class Linear(nn.Linear, LoraLayer):
                 score = torch.softmax(score, dim=-1)
                 output = torch.matmul(score, value)  # shape: (1, token_num, 4)
                 attention_outputs=video_mask[i,:,:]*output
-                new_video[i,:,:]=video_token[i,:,:]+attention_outputs
+                new_video[i,:,:]=video_token[i,:,:]+attention_outputs*0.5
             
 
             input_b=[output_a[0],new_video]
@@ -469,7 +466,7 @@ class Linear(nn.Linear, LoraLayer):
                 score = torch.softmax(score, dim=-1)
                 output = torch.matmul(score, value)  # shape: (1, token_num, 4)
                 attention_outputs=video_mask[i,:,:]*output
-                new_video[i,:,:]=video_token[i,:,:]+attention_outputs
+                new_video[i,:,:]=video_token[i,:,:]+attention_outputs*0.5
 
             
 
