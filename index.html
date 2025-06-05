@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="description" content="MokA">
+    <meta name="keywords" content="Multi-Sensory, Robotic Manipulation, Multi-Stage">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+
+    <title>MokA</title>
+
+
+    <link rel="icon" href="asset/moka.png">
+
+
+    <script type="text/javascript" async
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+    <script type="text/x-mathjax-config">
+        MathJax.Hub.Config({ tex2jax: { inlineMath: [['$','$'], ['\\(','\\)']], processEscapes: true } });
+    </script>
+    <!-- Global site tag (gtag.js) - Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-PYVRSFMDRL"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+
+        function gtag() {
+            dataLayer.push(arguments);
+        }
+
+        gtag('js', new Date());
+
+        gtag('config', 'G-PYVRSFMDRL');
+    </script>
+
+    <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro" rel="stylesheet">
+
+    <link rel="stylesheet" href="./static/css/bulma.min.css">
+    <link rel="stylesheet" href="./static/css/bulma-carousel.min.css">
+    <link rel="stylesheet" href="./static/css/bulma-slider.min.css">
+    <link rel="stylesheet" href="./static/css/fontawesome.all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+    <link rel="stylesheet" href="./static/css/index.css">
+    <!-- <link rel="icon" href="./static/images/logo.png"> -->
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script defer src="./static/js/fontawesome.all.min.js"></script>
+    <script src="./static/js/bulma-carousel.min.js"></script>
+    <script src="./static/js/bulma-slider.min.js"></script>
+    <script src="./static/js/index.js"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        .card {
+            box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2);
+            /* transition: 0.3s; */
+            /* width: 300px; */
+            border-radius: 10px;
+            /* 圆角的大小 */
+            /* margin: 50px; */
+            padding: 7px;
+            background-color: #f1f1f1;
+        }
+
+        .card:hover {
+            box-shadow: 0 8px 16px 0 rgba(0, 0, 0, 0.2);
+        }
+
+        .card2 {
+            box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2);
+            /* transition: 0.3s; */
+            /* width: 300px; */
+            border-radius: 7px;
+            /* 圆角的大小 */
+            /* margin: 50px; */
+            padding: 5px;
+            background-color: #f1f1f1;
+        }
+
+        .card2:hover {
+            box-shadow: 0 8px 16px 0 rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav class="navbar" role="navigation" aria-label="main navigation">
+        <div class="navbar-brand">
+            <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false">
+                <span aria-hidden="true"></span>
+                <span aria-hidden="true"></span>
+                <span aria-hidden="true"></span>
+            </a>
+        </div>
+        <div class="navbar-menu">
+            <div class="navbar-start" style="flex-grow: 1; justify-content: center;">
+
+                <div class="navbar-item has-dropdown is-hoverable">
+                    <a class="navbar-link">
+                        More Research
+                    </a>
+                    <div class="navbar-dropdown">
+                        <a class="navbar-item" href="https://gewu-lab.github.io/">
+                            GeWu Lab@RUC
+                        </a>
+
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </nav>
+
+
+    <section class="hero">
+        <div class="hero-body">
+            <div class="container is-max-desktop">
+                <div class="columns is-centered">
+                    <div class="column has-text-centered">
+                        <h2 class="title is-2 publication-title">MokA: Multimodal Low-Rank Adaptation for MLLMs</h2>
+
+                        <div class="is-size-5 publication-authors">
+                            <span class="author-block">
+                                Yake Wei<sup>1,2,3</sup>,</span>
+                            <span class="author-block">
+                                Yu Miao<sup>1,2,3</sup>,</span>
+                            <span class="author-block">
+                                Dongzhan Zhou<sup>4</sup>,</span>
+                            <span class="author-block">
+                                Di Hu<sup>1,2,3</sup>
+                            </span>
+                        </div>
+
+                        <div class="is-size-5 publication-authors">
+                            <span class="author-block"><sup>1</sup>Gaoling School of Artificial Intelligence Renmin
+                                University of China Beijing, China
+                                <span class="author-block"><sup>2</sup>
+                                    Beijing Key Laboratory of Research on Large Models and Intelligent Governance</span>
+                                <span class="author-block"><sup>3</sup>
+                                    Engineering Research Center of Next-Generation Intelligent Search and
+                                    Recommendation, MOE</span>
+                                <span class="author-block"><sup>4</sup>
+                                    Shanghai Artificial Intelligence Laboratory</span>
+                        </div>
+
+                        <div class="column has-text-centered">
+                            <div class="publication-links">
+                                <span class="link-block">
+                                    <a href="#" class="external-link button is-normal is-rounded is-dark">
+                                        <span class="icon">
+                                            <i class="ai ai-arxiv"></i>
+                                        </span>
+                                        <span>arXiv</span>
+                                    </a>
+                                </span>
+                                <!-- Code Link. -->
+                                <span class="link-block">
+                                    <a href="https://github.com/GeWu-Lab/MokA"
+                                        class="external-link button is-normal is-rounded is-dark">
+                                        <span class="icon">
+                                            <i class="fab fa-github"></i>
+                                        </span>
+                                        <span>Code</span>
+                                    </a>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+    </section>
+
+
+    <section class="hero teaser">
+        <div class="container is-max-desktop">
+            <div class="hero-body">
+                <h2 class="title is-3 has-text-centered">Overview</h2>
+                <div class="content has-text-justified">
+                    <p>
+                        In this paper, we reveal that most current efficient multimodal fine-tuning methods are hindered
+                        by a key limitation: they are directly borrowed from LLMs, often neglecting the intrinsic
+                        differences of multimodal scenarios and even affecting the full utilization of all modalities.
+                    </p>
+                    <p>
+                        We argue that unimodal adaptation and cross-modal adaptation are two essential parts for the
+                        effective fine-tuning of MLLMs. From this perspective, we propose Multimodal Low-Rank Adaptation
+                        (MokA), a multimodal-aware efficient fine-tuning strategy that takes multimodal characteristics
+                        into consideration. It compresses unimodal information by modality-specific parameters while
+                        explicitly enhancing cross-modal interaction, ensuring both unimodal and cross-modal adaptation.
+                    </p>
+                    <p>
+                        Extensive experiments cover three representative multimodal scenarios (audio-visual-text,
+                        visual-text, and speech-text), and multiple LLM backbones (LLaMA2/3, Qwen2, Qwen2.5-VL, etc).
+                        Consistent improvements indicate the efficacy and versatility of the proposed method.
+                    </p>
+                    <table width="100%">
+                        <tr>
+                            <td align="center">
+                                <img src='asset/framework.svg ' width="45%" height="45%" valign="center">
+                                <p> Fig 1. Framework of MokA. </p>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+
+
+    <section class="hero teaser">
+        <div class="container is-max-desktop">
+            <div class="hero-body">
+                <h2 class="title is-3 has-text-centered">Experiments</h2>
+                <h2 class="title is-4">Comparision under audio-visual-text scenario </h2>
+                <img src='asset/avl.jpg'
+                    style="margin-top: 5px; margin-bottom: 10px; display: block; margin-left: auto; margin-right: auto;"
+                    width="70%">
+                <div class="content has-text-justified">
+                </div>
+
+                <h2 class="title is-4">Comparision under visual-text scenario </h2>
+                <img src='asset/vl.jpg'
+                    style="margin-top: 5px; margin-bottom: 10px; display: block; margin-left: auto; margin-right: auto;"
+                    width="70%">
+                <div class="content has-text-justified">
+                </div>
+
+                <h2 class="title is-4">Comparision under speech-text scenario </h2>
+                <img src='asset/al.jpg'
+                    style="margin-top: 5px; margin-bottom: 10px; display: block; margin-left: auto; margin-right: auto;"
+                    width="70%">
+
+
+                <h2 class="title is-4">Different variants of MokA </h2>
+                <div class="content has-text-justified">
+                <p>
+                    In the original MokA, cross-attention is employed to explicitly strengthen the interaction between text and non-text tokens, thereby facilitating improved cross-modal adaptation. As previously discussed, alternative modules that similarly enhance this interaction can also be considered. In this section, we explore several variants of the cross-modal interaction module.
+                </p>
+                <p>
+                The cross-attention* variant also adopts a cross-attention mechanism; however, it uses text tokens as queries. Consequently, the updated text tokens integrate information from the relevant non-text tokens—reversing the direction of interaction compared to the original MokA. The naive interaction variant performs a simple, uniform mapping from text tokens to non-text tokens without employing any attention mechanism.
+            </p>
+                <p>
+                Results show that all proposed variants outperform the LoRA baseline, demonstrating that the core idea of explicitly reinforcing cross-modal interactions is beneficial, and the effectiveness is not restricted to one specific module design.
+            </p>
+            </div>
+
+
+                <img src='asset/variants.jpg'
+                    style="margin-top: 5px; margin-bottom: 10px; display: block; margin-left: auto; margin-right: auto;"
+                    width="70%">
+                <div class="content has-text-justified">
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+
+    <!--
+    <div class="container is-max-desktop content">
+        <h2 class="title">BibTeX</h2>
+        <pre><code>@article{du2025crab,
+  title={Crab: A Unified Audio-Visual Scene Understanding Model with Explicit Cooperation},
+  author={Du, Henghui and Li, Guangyao and Zhou, Chang and Zhang, Chunjie and Zhao, Alan and Hu, Di},
+  journal={arXiv preprint arXiv:2503.13068},
+  year={2025}
+}</code></pre>
+    </div>
+
+-->
+    <footer class="footer">
+        <div class="container">
+            <div class="content has-text-centered">
+                <a class="icon-link" href="https://openreview.net/pdf?id=jt7HPDmsHv">
+                    <i class="fas fa-file-pdf"></i>
+                </a>
+                <a class="icon-link" href="https://github.com/GeWu-Lab/Crab" class="external-link" disabled>
+                    <i class="fab fa-github"></i>
+                </a>
+            </div>
+            <div class="columns is-centered">
+                <div class="column is-8">
+                    <div class="content">
+
+                        <p>
+                            Thanks to <a href="https://nerfies.github.io/">Nerfies</a> for providing the
+                            template of this page.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </footer>
+</body>
+
+</html>
