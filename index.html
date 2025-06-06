@@ -12,7 +12,23 @@
 
 
     <link rel="icon" href="asset/moka.png">
-
+    <script id="MathJax-script" async
+    src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+  </script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']],
+        packages: {'[+]': ['ams']}
+      },
+      svg: {
+        fontCache: 'global'
+      }
+    };
+  </script>
+  <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 
     <script type="text/javascript" async
         src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML"></script>
@@ -190,9 +206,18 @@
                     </p>
                     <p>
                         We argue that unimodal adaptation and cross-modal adaptation are two essential parts for the
-                        effective fine-tuning of MLLMs. From this perspective, we propose Multimodal Low-Rank Adaptation
-                        (MokA), a multimodal-aware efficient fine-tuning strategy that takes multimodal characteristics
-                        into consideration. It compresses unimodal information by modality-specific parameters while
+                        effective fine-tuning of MLLMs: 
+                        \begin{align}
+                        h &= W_0 \mathbf{x} + \Delta W \mathbf{x}  \\
+                        & = W_0 \mathbf{x} + \Delta W [\mathbf{x}^{\text{m}_1};\mathbf{x}^{\text{m}_2};\cdots; \mathbf{x}^{\text{m}_n}], \\
+                        &= W_0\mathbf{x} +  \underbrace{ [\Delta W_1 \mathbf{x}^{\text{m}_1};\Delta W_2 \mathbf{x}^{\text{m}_2} ;\cdots;\Delta W_n \mathbf{x}^{\text{m}_n}   ]}_{\texttt{unimodal adaptation}} + 
+                        \underbrace{\Delta W_{\texttt{cross}}  [\mathbf{x}^{\text{m}_1};\mathbf{x}^{\text{m}_2};\cdots;\mathbf{x}^{\text{m}_n}]}_{\texttt{cross-modal adaptation}},
+                        \end{align}
+                        where $W_0$ is the original pretrained weight, $\Delta W$ is the low-rank adaptation matrix, $\mathbf{x}^{\text{m}_i}$ is the input of modality $i$. $W_i$ is the low-rank adaptation matrix for modality $i$, and $\Delta W_{\texttt{cross}}$ is the cross-modal adaptation matrix.
+                        </p>
+                        <p>
+                        From this perspective, we propose Multimodal Low-Rank Adaptation
+                        (MokA), a multimodal-aware efficient fine-tuning strategy that takes multimodal characteristics into consideration. It compresses unimodal information by modality-specific parameters while
                         explicitly enhancing cross-modal interaction, ensuring both unimodal and cross-modal adaptation.
                     </p>
                     <p>
@@ -220,19 +245,26 @@
     <section class="hero teaser">
         <div class="container is-max-desktop">
             <div class="hero-body">
-                <h2 class="title is-3 has-text-centered">Experiments</h2>
-                    <!-- <p>
-                        Extensive experiments cover three representative multimodal scenarios (audio-visual-text,
-                        visual-text, and speech-text), and multiple LLM backbones (LLaMA2/3, Qwen2, Qwen2.5-VL, etc).
-                        Consistent improvements indicate the efficacy and versatility of the proposed method.
-                    </p>
-                    <table width="100%">
-                        <tr>
-                            <td align="center">
-                                <img src='asset/radar.svg ' width="55%" height="55%" valign="center">
-                            </td>
-                        </tr>
-                    </table> -->
+                <h2 class="title is-3 has-text-centered">Comparison and Results</h2>
+
+                                <h2 class="title is-4">Difference between other LoRAs and MokA </h2>
+                <div class="content has-text-justified">
+                <p>
+                    Most former LoRA methods ignore the modality characteristics and directly apply the same low-rank decomposition matrices to all modalities. To better support multimodal adaptation, we argue that both unimodal and cross-modal updates should be considered during fine-tuning. 
+                </p>
+                <p>
+                    Therefore, MokA retains the widely adopted low-rank decomposition matrices, but it redefines the roles of matrices $A$ and $B$ to better accommodate multimodal characteristics. Modality-specific matrix $A$, cross-attention, and shared multimodal matrix $B$ jointly ensure both unimodal and cross-modal adaptation.
+                </p>
+
+            </div>
+
+
+                <img src='asset/comparison.svg'
+                    style="margin-top: 5px; margin-bottom: 10px; display: block; margin-left: auto; margin-right: auto;"
+                    width="100%">
+                <div class="content has-text-justified">
+                </div>
+
 
 
                 <h2 class="title is-4">Comparision under audio-visual-text scenario </h2>
