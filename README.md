@@ -13,8 +13,12 @@ td, tr {
 
 <h3 align="center"> <a href="https://arxiv.org/abs/2506.05191"> MokA: Multimodal Low-Rank Adaptation for MLLMs</a></h3>
 
+<center class="half">
+<img src="assets/moka.svg" width="54%"/><img src="assets/radar.svg" width="45%"/>
+</center>
 
-<table width="100%" frame=void>
+
+<!-- <table width="100%" frame=void>
     <tr>
         <td align="center">
             <img src='assets/moka.svg ' width="120%" height="120%" valign="center">
@@ -23,7 +27,7 @@ td, tr {
             <img src='assets/radar.svg ' width="80%" height="80%" valign="center">
         </td>
     </tr>
-</table>
+</table> -->
 
 
 
