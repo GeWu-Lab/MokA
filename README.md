@@ -8,9 +8,6 @@
 
 <h3 align="center"> <a href="https://arxiv.org/abs/2506.05191"> MokA: Multimodal Low-Rank Adaptation for MLLMs</a></h3>
 
-<center class="half">
-<img src="assets/moka.svg" width="40%"/><img src="assets/radar.svg" width="45%"/>
-</center>
 
 
 <table width="100%" border="0" frame="void" rules="none" style="border-collapse: collapse;">
