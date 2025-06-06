@@ -12,23 +12,39 @@
 
 
     <link rel="icon" href="asset/moka.png">
-    <script id="MathJax-script" async
-    src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
-  </script>
-    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+
   <script>
     window.MathJax = {
       tex: {
         inlineMath: [['\\(', '\\)']],
         displayMath: [['\\[', '\\]']],
-        packages: {'[+]': ['ams']}
+        packages: { '[+]': ['ams'] }
       },
       svg: {
+        scale: 1, // 不缩放
         fontCache: 'global'
       }
     };
   </script>
-  <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 1rem;
+    }
+
+    .math-scroll {
+      overflow-x: auto;
+      max-width: 100%;
+      padding: 0.5rem 0;
+    }
+
+    mjx-container {
+      display: inline-block;
+      min-width: max-content; /* 确保公式可滚动 */
+    }
+  </style>
 
     <script type="text/javascript" async
         src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML"></script>
@@ -194,7 +210,7 @@
     </section>
 
 
-    <section class="hero teaser">
+    <section >
         <div class="container is-max-desktop">
             <div class="hero-body">
                 <h2 class="title is-3 has-text-centered">Overview</h2>
@@ -207,12 +223,15 @@
                     <p>
                         We argue that unimodal adaptation and cross-modal adaptation are two essential parts for the
                         effective fine-tuning of MLLMs: 
-                        \begin{align}
-                        h &= W_0 \mathbf{x} + \Delta W \mathbf{x}  \\
-                        & = W_0 \mathbf{x} + \Delta W [\mathbf{x}^{\text{m}_1};\mathbf{x}^{\text{m}_2};\cdots; \mathbf{x}^{\text{m}_n}], \\
-                        &= W_0\mathbf{x} +  \underbrace{ [\Delta W_1 \mathbf{x}^{\text{m}_1};\Delta W_2 \mathbf{x}^{\text{m}_2} ;\cdots;\Delta W_n \mathbf{x}^{\text{m}_n}   ]}_{\texttt{unimodal adaptation}} + 
-                        \underbrace{\Delta W_{\texttt{cross}}  [\mathbf{x}^{\text{m}_1};\mathbf{x}^{\text{m}_2};\cdots;\mathbf{x}^{\text{m}_n}]}_{\texttt{cross-modal adaptation}},
-                        \end{align}
+                        <div class="math-scroll">
+\[ 
+\begin{align}
+h &= W_0 \mathbf{x} + \Delta W \mathbf{x} = W_0 \mathbf{x} + \Delta W [\mathbf{x}^{\text{m}_1};\mathbf{x}^{\text{m}_2};\cdots; \mathbf{x}^{\text{m}_n}], \\
+&= W_0\mathbf{x} +  \underbrace{ [\Delta W_1 \mathbf{x}^{\text{m}_1};\Delta W_2 \mathbf{x}^{\text{m}_2} ;\cdots;\Delta W_n \mathbf{x}^{\text{m}_n}   ]}_{\texttt{unimodal adaptation}} + 
+\underbrace{\Delta W_{\texttt{cross}}  [\mathbf{x}^{\text{m}_1};\mathbf{x}^{\text{m}_2};\cdots;\mathbf{x}^{\text{m}_n}]}_{\texttt{cross-modal adaptation}},
+\end{align}
+\]
+</div>
                         where $W_0$ is the original pretrained weight, $\Delta W$ is the low-rank adaptation matrix, $\mathbf{x}^{\text{m}_i}$ is the input of modality $i$. $W_i$ is the low-rank adaptation matrix for modality $i$, and $\Delta W_{\texttt{cross}}$ is the cross-modal adaptation matrix.
                         </p>
                         <p>
