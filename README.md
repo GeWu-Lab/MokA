@@ -1,5 +1,11 @@
 # MokA
 
+<style>
+td, tr {
+   border: none!important;
+}
+</style>
+
 <p align="center">
     <img src="assets/moka.png" width="150" style="margin-bottom: 0.2;"/>
 <p>
