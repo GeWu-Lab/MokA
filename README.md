@@ -1,10 +1,5 @@
 # MokA
 
-<style>
-td, tr {
-   border: none!important;
-}
-</style>
 
 <p align="center">
     <img src="assets/moka.png" width="150" style="margin-bottom: 0.2;"/>
@@ -18,16 +13,16 @@ td, tr {
 </center>
 
 
-<!-- <table width="100%" frame=void>
+<table width="100%" border="0" frame="void" rules="none" style="border-collapse: collapse;">
     <tr>
-        <td align="center">
+        <td align="center" style="border: none;">
             <img src='assets/moka.svg ' width="120%" height="120%" valign="center">
         </td>
-        <td align="center">
+        <td align="center" style="border: none;">
             <img src='assets/radar.svg ' width="80%" height="80%" valign="center">
         </td>
     </tr>
-</table> -->
+</table>
 
 
 
