@@ -8,7 +8,7 @@ class CLIPVisionTower(nn.Module):
 
     def __init__(
         self, 
-        model_name='clip-vit-large-patch14-224',
+        model_name='/DATA/DATANAS2/ligy/LGY_DHH/pretrain/openai/clip-vit-large-patch14-224',
         select_layer=-2,
         select_feature='patch',
     ):

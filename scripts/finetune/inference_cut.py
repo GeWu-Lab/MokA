@@ -19,44 +19,42 @@ import transformers
 
 from configs.unified_config import ModelArguments,DataArguments,TrainingArguments,InferenceArguments
 
-from dataset.unified_dataset import get_dataset_collator,get_v2_pallete
+from dataset.unified_dataset import get_dataset_collator
 from utils.util import set_seed,find_all_linear_names,prepare_sample,write2json,load_ckpt
-from utils.avss_utils import (
-    mask_iou,compute_miou_from_jsonl,calc_color_miou_fscore,
-    save_color_mask,save_gt_mask,Eval_Fmeasure,
-    metric_s_for_null
-)
 from utils.deepspeed_utils import *
 
 local_rank = None
 
 
 
-def inference(dataset,collator,dataloader,ckpt_dir,model,tokenizer,num):
-    save_dir = join(ckpt_dir,f'inference')
+def inference_avqa(dataset,collator,dataloader,ckpt_dir,model,tokenizer,num):
+    save_dir = join(ckpt_dir,f'inference_avqa')
     os.makedirs(save_dir,exist_ok=True)
     
-    name='fold_results_'+str(num)+'.jsonl'
+    name='results'+str(num)+'.jsonl'
     fp = join(save_dir,name)
 
     all_num=len(dataloader)
-    avg=int(all_num/5)
+    # avg=int(all_num/5)
 
-    if(num==0):
-        start_point=0
-        end_point=avg
-    elif(num==1):
-        start_point=avg
-        end_point=avg*2
-    elif(num==2):
-        start_point=avg*2
-        end_point=avg*3
-    elif(num==3):
-        start_point=avg*3
-        end_point=avg*4
-    elif(num==4):
-        start_point=avg*4
-        end_point=all_num
+    # if(num==0):
+    #     start_point=0
+    #     end_point=avg
+    # elif(num==1):
+    #     start_point=avg
+    #     end_point=avg*2
+    # elif(num==2):
+    #     start_point=avg*2
+    #     end_point=avg*3
+    # elif(num==3):
+    #     start_point=avg*3
+    #     end_point=avg*4
+    # elif(num==4):
+    #     start_point=avg*4
+    #     end_point=all_num
+    
+    start_point=0
+    end_point=all_num
 
 
 
@@ -67,7 +65,7 @@ def inference(dataset,collator,dataloader,ckpt_dir,model,tokenizer,num):
     subset = Subset(dataset, subset_indices)
     subset_dataloader = DataLoader(subset, batch_size=1, shuffle=False,collate_fn=collator,drop_last=False)
     
-    pbar = tqdm(total=len(subset_dataloader),desc=f'inference')
+    pbar = tqdm(total=len(subset_dataloader),desc=f'inference avqa')
 
     for step, sample in enumerate(subset_dataloader):
 
@@ -77,7 +75,7 @@ def inference(dataset,collator,dataloader,ckpt_dir,model,tokenizer,num):
         sample.update(
             {
                 'use_cache':True,
-                'max_new_tokens':500,
+                'max_new_tokens':150,
             }
         )
         with torch.no_grad():
@@ -87,14 +85,13 @@ def inference(dataset,collator,dataloader,ckpt_dir,model,tokenizer,num):
             metadata = batch_metadata[i]
             metadata['predict'] = output[i]
 
-
             write2json(fp=fp,dict_data=metadata)
 
         
         pbar.update(1)
-        # if step > 50:
-        #     break
+
     pbar.close()
+
 
 
 
@@ -107,8 +104,6 @@ def train(attn_implementation=None):
 
     if model_args.llm_name == 'llama':
         d_model = 4096
-    elif model_args.llm_name == 'qwen':
-        d_model = 3584
 
     local_rank = training_args.local_rank
     compute_dtype = torch.float32
@@ -127,16 +122,6 @@ def train(attn_implementation=None):
             pretrain_model_name_or_path,
             config=config,
             torch_dtype=compute_dtype
-        )
-    elif model_args.llm_name == 'qwen':
-        from models.unified_qwen import UnifiedForCausalLM
-        from transformers import Qwen2Config
-        config = Qwen2Config.from_pretrained(pretrain_model_name_or_path, local_files_only=True)
-        config._attn_implementation = attn_implementation
-        model = UnifiedForCausalLM.from_pretrained(
-            pretrain_model_name_or_path,
-            config = config,
-            torch_dtype = compute_dtype
         )
 
     model.config.use_cache = True
@@ -171,19 +156,13 @@ def train(attn_implementation=None):
             lora_alpha = lora_alpha,
             lora_dropout = lora_dropout,
             lora_nums = lora_nums,
-            # modules_to_save=modules_to_save
+            blc_alpha= training_args.blc_alpha,
+            blc_weight=training_args.blc_weight,
         )
         model = get_peft_model(model, peft_config)
 
-    if model_args.llm_name == 'qwen':
-        from transformers import Qwen2Tokenizer
-        tokenizer = Qwen2Tokenizer.from_pretrained(
-            pretrain_model_name_or_path,
-            padding_side="left",
-            use_fast=True,
-        )
     
-    elif model_args.llm_name == 'llama':
+    if model_args.llm_name == 'llama':
         from transformers import LlamaTokenizer
         tokenizer = LlamaTokenizer.from_pretrained(
             pretrain_model_name_or_path,
@@ -197,34 +176,26 @@ def train(attn_implementation=None):
     model.get_model().pad_token_id = tokenizer.pad_token_id
     model.get_model().init_multimodal_modules(visual_branch=training_args.visual_branch,
                                               audio_branch=training_args.audio_branch,
-                                              segment_branch=training_args.seg_branch,
                                               d_model=d_model,vit_ckpt_path=model_args.vit_ckpt_path,
                                               select_layer_list=model_args.select_layer_list,
                                               select_feature=model_args.select_feature,image_size=model_args.image_size,
                                               patch_size=model_args.patch_size,visual_query_token_nums=model_args.visual_query_token_nums,
-                                              audio_query_token_nums=model_args.audio_query_token_nums,BEATs_ckpt_path=model_args.BEATs_ckpt_path,
-                                              prompt_embed_dim=model_args.prompt_embed_dim,mask_decoder_transformer_depth=model_args.mask_decoder_transformer_depth,
-                                              low_res_mask_size=model_args.low_res_mask_size,
-                                              avs_query_num=model_args.avs_query_num,
-                                              num_classes=model_args.num_classes,
-                                              query_generator_num_layers=model_args.query_generator_num_layers,
-                                              dice_loss_weight=training_args.dice_loss_weight,
-                                              bce_loss_weight=training_args.bce_loss_weight,
-                                              use_vqgan=False)
+                                              audio_query_token_nums=model_args.audio_query_token_nums,BEATs_ckpt_path=model_args.BEATs_ckpt_path)
 
-    image_scale_nums = model_args.image_scale_nums
-    token_nums_per_scale = model_args.token_nums_per_scale
-    model.initialize_MM_tokenizer(tokenizer,mask_token_nums=image_scale_nums*token_nums_per_scale,use_vqgan=False)
+    model.initialize_MM_tokenizer(tokenizer)
     MM_tokenizer_vocab_nums = len(tokenizer)
     print('ori_tokenizer_vocab_nums: ',ori_tokenizer_vocab_nums, ' MM_tokenizer_vocab_nums: ',MM_tokenizer_vocab_nums)
 
-    infer_avs = False
 
     ckpt_dir = infer_args.ckpt_dir
+
+
     ckpt_path = join(ckpt_dir,'finetune_weights.bin')
     ckpt = torch.load(ckpt_path,map_location='cpu')
     model.load_state_dict(ckpt,strict=False)
     print(f'load ckpt from {ckpt_path} finished...')
+
+
 
     device = infer_args.device
     torch.cuda.set_device(device)
@@ -233,14 +204,13 @@ def train(attn_implementation=None):
     
     image_processor = model.get_model().visual_encoder.image_processor if training_args.visual_branch else None
     dataset, collator = get_dataset_collator(data_args=data_args, tokenizer=tokenizer, 
-                                             image_processor=image_processor,mode='test',test_name=infer_args.test_name)
-    
-    # batch_size = 1 if infer_avs else 4
-    batch_size = 1
-    dataloader = DataLoader(dataset=dataset,batch_size=batch_size,shuffle=False,collate_fn=collator,drop_last=False)
+                                             image_processor=image_processor,mode='test')
     
 
-    inference(dataset=dataset,collator=collator,dataloader=dataloader,ckpt_dir=ckpt_dir,model=model,tokenizer=tokenizer,num=infer_args.cut_folds)
+    batch_size = 1
+    dataloader = DataLoader(dataset=dataset,batch_size=batch_size,shuffle=False,collate_fn=collator,drop_last=False)
+
+    inference_avqa(dataset=dataset,collator=collator,dataloader=dataloader,ckpt_dir=ckpt_dir,model=model,tokenizer=tokenizer,num=infer_args.cut_folds)
 
 
 

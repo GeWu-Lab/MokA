@@ -2,40 +2,40 @@ import json
 import torch
 from torch import nn
 from typing import Optional,List,Tuple
-from models.modeling_qwen2 import Qwen2ForCausalLM,Qwen2Model,Qwen2Config
-from transformers import AutoModelForCausalLM,AutoConfig
+from transformers import AutoModelForCausalLM,LlamaConfig,AutoConfig
+from models.modeling_llama_post_pretrian import LlamaForCausalLM,LlamaModel
+#from transformers import LlamaForCausalLM,LlamaModel
 from models.unified_arch import UnifiedMetaModel,UnifiedMetaForCausalLM
 
-class UnifiedConfig(Qwen2Config):
+class UnifiedConfig(LlamaConfig):
     model_type = "unified_llm"
 
 
-class UnifiedModel(UnifiedMetaModel,Qwen2Model):
+class UnifiedModel(UnifiedMetaModel,LlamaModel):
     config_class = UnifiedConfig
 
-    def __init__(self, config: Qwen2Config, **kwargs):
-        super(UnifiedModel, self).__init__(config, **kwargs)
+    def __init__(self, config: LlamaConfig):
+        super(UnifiedModel, self).__init__(config)
         self.config = config
 
 def is_avs_task(task_name):
     return task_name in ['ms3','s4','avss','ref-avs']
 
 
-class UnifiedForCausalLM(Qwen2ForCausalLM,UnifiedMetaForCausalLM):
+class UnifiedForCausalLM(LlamaForCausalLM,UnifiedMetaForCausalLM):
     config_class = UnifiedConfig
 
-    def __init__(self, config: Qwen2Config, **kwargs):
+    def __init__(self, config: LlamaConfig, **kwargs):
         super().__init__(config)
         self.config=config
         self.model = UnifiedModel(config,**kwargs)
-        # self.pretraining_tp = config.pretraining_tp
+        self.pretraining_tp = config.pretraining_tp
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
         # Initialize weights and apply final processing
         self.post_init()
 
-        self.is_avs_task = False
 
 
     def get_model(self) -> UnifiedModel:
@@ -63,8 +63,6 @@ class UnifiedForCausalLM(Qwen2ForCausalLM,UnifiedMetaForCausalLM):
         **kwargs
     ):
         
-        self.is_avs_task = False
-
         if input_ids is not None and input_ids.shape[1]==1:
             inputs_embeds = self.get_model().embed_tokens(input_ids)
             input_ids = None
@@ -74,9 +72,6 @@ class UnifiedForCausalLM(Qwen2ForCausalLM,UnifiedMetaForCausalLM):
                 batch_input_ids=batch_input_ids,
                 batch_labels=batch_labels,
                 batch_X_modals=batch_X_modals,
-                batch_task_names=batch_task_names,
-                return_multi_scale_features=False, # vit feature
-                return_gt_mask=False,
             )
             input_ids = inputs['input_ids']
             inputs_embeds = inputs['inputs_embeds']
@@ -84,10 +79,7 @@ class UnifiedForCausalLM(Qwen2ForCausalLM,UnifiedMetaForCausalLM):
             labels = inputs['labels']
             position_ids = inputs['position_ids']
 
-            mask_token_mask = inputs.get('mask_token_mask',None)
-            multi_scale_image_features = inputs.get('multi_scale_image_features',None)
-            gt_mask = inputs.get('gt_mask',None)
-
+            
         output = super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -99,31 +91,9 @@ class UnifiedForCausalLM(Qwen2ForCausalLM,UnifiedMetaForCausalLM):
             output_attentions=output_attentions,
             # output_hidden_states=False,
         )
-
-        # if '<mask>' in list(batch_X_modals[0].keys()):
-        #     output_hidden_states = output.hidden_states
-        #     # print('output_hidden_states len: ',len(output_hidden_states)) # 29
-        #     # print('output_hidden_states[-1]: ',output_hidden_states[-1].shape) # torch.Size([2, 350, 3584])
-        #     bs,_,dim = output_hidden_states[-1].shape
-        #     pred_embeddings = output_hidden_states[-1][mask_token_mask] # L,dim
-        #     pred_embeddings = pred_embeddings.reshape(bs,-1,dim) # bs,n,dim
-
-        #     seg_output = self.model.postprocess_seg(
-        #         pred_embeddings=pred_embeddings,
-        #         multi_scale_image_feature_list=multi_scale_image_features,
-        #         gt_mask=gt_mask,
-        #         low_res_mask_size=112
-        #     )
-        #     mask_loss = seg_output['mask_loss']
-        #     loss = output.loss * 1.0 + mask_loss
-        #     output.loss = loss
-        #     return output
-        # else:
-        #     return output
-
-        ## inference segmentation
+        
         return output
-
+  
 
     @torch.no_grad()
     def generate(
@@ -134,23 +104,22 @@ class UnifiedForCausalLM(Qwen2ForCausalLM,UnifiedMetaForCausalLM):
         batch_task_names,
         **kwargs
     ):
+        # print('get multimodal input')
         inputs = self.prepare_multimodal_inputs(
             batch_input_ids = batch_input_ids,
             batch_labels = batch_labels,
             batch_X_modals = batch_X_modals,
-            return_multi_scale_features=False,
-            return_gt_mask=False,
-            batch_task_names=batch_task_names
         )
         inputs_embeds = inputs['inputs_embeds']
+
         return super().generate(
-            inputs_embeds = inputs_embeds[0],
+            inputs_embeds = inputs_embeds,
             output_hidden_states=False,
             return_dict_in_generate=False,
             **kwargs
         )
 
-    
+
 
     def prepare_inputs_for_generation(self, input_ids, past_key_values=None, inputs_embeds=None, **kwargs):
         # print('into prepare inputs...   input_ids:  ',input_ids,'  past key values:  ',past_key_values is None, '   inputs_emebds: ',inputs_embeds is None)

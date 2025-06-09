@@ -29,7 +29,7 @@ from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
 from transformers.activations import ACT2FN
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast, SequenceClassifierOutputWithPast
-from transformers.modeling_utils import PreTrainedModel
+from models.my_modeling_utils import PreTrainedModel
 from transformers.utils import add_start_docstrings, add_start_docstrings_to_model_forward, logging, replace_return_docstrings
 from transformers import LlamaConfig
 
@@ -641,14 +641,18 @@ class LlamaModel(LlamaPreTrainedModel):
 
         # retrieve input_ids and inputs_embeds
 
+        # print('llamamodel')
 
         #### 训练和测试不同处理
-        if(len(inputs_embeds_all)>1):
+        if isinstance(inputs_embeds_all, list):
+            # print('shizhelima?')
             inputs_embeds=inputs_embeds_all[0]
+            # print(inputs_embeds.size())
             masks=inputs_embeds_all[1:]
         else:
             inputs_embeds=inputs_embeds_all
             masks=None
+            # print('nonenoe?')
 
         # print('%%%%%%%%%%%%%%%%%')
         # print(masks)
@@ -840,6 +844,8 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+        # print('llamaforcausalLM')
+
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         outputs = self.model(
             input_ids=input_ids,
@@ -888,8 +894,15 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         )
 
     def prepare_inputs_for_generation(
-        self, input_ids, past_key_values=None, attention_mask=None, inputs_embeds=None, **kwargs
+        self, input_ids_all, past_key_values=None, attention_mask=None, inputs_embeds=None, **kwargs
     ):
+        if isinstance(input_ids_all, list):
+            input_ids = input_ids_all[0]
+            modality_maks=input_ids_all[1:]
+        else:
+            input_ids = input_ids_all
+
+
         if past_key_values:
             input_ids = input_ids[:, -1:]
 
@@ -903,10 +916,21 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
 
         # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
         if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            model_inputs = {"input_ids": input_ids}
+            # model_inputs = {"inputs_embeds": inputs_embeds}
 
+            modality_maks.insert(0, inputs_embeds) 
+
+            model_inputs = {"inputs_embeds": modality_maks}
+            ## first here
+            # print('first', modality_maks[0].size())
+            # 1,80,4096
+        else:
+            ### here
+            model_inputs = {"input_ids": input_ids}
+            # print('others', input_ids.size())
+            # 1,1
+        
+    
         model_inputs.update(
             {
                 "position_ids": position_ids,
@@ -979,6 +1003,7 @@ class LlamaForSequenceClassification(LlamaPreTrainedModel):
             `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
 
         transformer_outputs = self.model(
             input_ids,

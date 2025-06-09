@@ -3,28 +3,48 @@
 
 echo "pretrain"
 
+# Environment Variables
+WORLD_SIZE=1
+NPROC_PER_NODE=4
+MASTER_PORT=6666
+RANK=0
 
 
-llama2_ckpt_path=llama2-7b-chat-hf
-qwen2_ckpt_path=Qwen2-7B-Instruct   
+
+llama_ckpt_path=llama2-7b-chat-hf
 
 # Training Arguments
-LOCAL_BATCH_SIZE=4
+LOCAL_BATCH_SIZE=2
 GRADIENT_ACCUMULATION_STEPS=1
 GLOBAL_BATCH_SIZE=$WORLD_SIZE*$NPROC_PER_NODE*$LOCAL_BATCH_SIZE*$GRADIENT_ACCUMULATION_STEPS
+# 16*8*4
 # Log Arguments
-RUN_NAME=qwen_visual_qformer
+export TRANSFORMERS_OFFLINE=1
+export WANDB_PROJECT=pretrain
+RUN_NAME=visual_pretrain
 OUTP_DIR=results
-export CUDA_VISIBLE_DEVICES='0,1,2,3'
+export CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7'
 export TOKENIZERS_PARALLELISM='true'
 export ASCEND_LAUNCH_BLOCKING='1'
-# export CUDA_DEVICE_ORDER="PCI_BUS_ID"
 
-torchrun \
+
+
+########### Arguments ###########
+#################################
+
+# vit_ckpt_path: the path of the pre-trained ViT checkpoint.
+# BEATs_ckpt_path: the path of the pre-trained BEATs checkpoint.
+
+
+#################################
+
+
+torchrun --nproc_per_node $NPROC_PER_NODE \
+    --master_port $MASTER_PORT \
     scripts/pretrain/pretrain.py \
     --deepspeed deepspeed/stage2-offload.json \
-    --llm_name qwen \
-    --model_name_or_path $qwen2_ckpt_path \
+    --llm_name llama \
+    --model_name_or_path $llama_ckpt_path \
     --freeze_backbone True \
     --lora_enable False \
     --bits 32 \
@@ -44,16 +64,6 @@ torchrun \
     --audio_caption_task False \
     --BEATs_ckpt_path BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2.pt \
     --audio_query_token_nums 32 \
-    --seg_branch False \
-    --segmentation_task False \
-    --prompt_embed_dim 256 \
-    --mask_decoder_transformer_depth 2 \
-    --low_res_mask_size 128 \
-    --image_scale_nums 2 \
-    --token_nums_per_scale 3 \
-    --ce_loss_weight 1.0 \
-    --dice_loss_weight 0.5 \
-    --bce_loss_weight 2.0 \
     --output_dir $OUTP_DIR/$WANDB_PROJECT/$RUN_NAME \
     --num_train_epochs 1 \
     --per_device_train_batch_size $LOCAL_BATCH_SIZE \
@@ -72,5 +82,4 @@ torchrun \
     --gradient_checkpointing True \
     --half_precision_backend "auto" \
     --dataloader_num_workers 4 \
-    --report_to tensorboard >> "${OUTPUT_LOG}" 2>&1
-
+    --report_to tensorboard

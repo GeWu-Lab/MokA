@@ -19,53 +19,10 @@ from decord import VideoReader
 from transformers import CLIPImageProcessor
 import warnings
 
-
 warnings.filterwarnings("ignore")
 from dataset.audio_processor import preprocess
 
 
-
-label_to_idx_path = 'label2idx.json'
-
-def get_v2_pallete(label_to_idx_path, num_cls=71):
-    def _getpallete(num_cls=71):
-        """build the unified color pallete for AVSBench-object (V1) and AVSBench-semantic (V2),
-        71 is the total category number of V2 dataset, you should not change that"""
-        n = num_cls
-        pallete = [0] * (n * 3)
-        for j in range(0, n):
-            lab = j
-            pallete[j * 3 + 0] = 0
-            pallete[j * 3 + 1] = 0
-            pallete[j * 3 + 2] = 0
-            i = 0
-            while (lab > 0):
-                pallete[j * 3 + 0] |= (((lab >> 0) & 1) << (7 - i))
-                pallete[j * 3 + 1] |= (((lab >> 1) & 1) << (7 - i))
-                pallete[j * 3 + 2] |= (((lab >> 2) & 1) << (7 - i))
-                i = i + 1
-                lab >>= 3
-        return pallete  # list, lenth is n_classes*3
-
-    with open(label_to_idx_path, 'r') as fr:
-        label_to_pallete_idx = json.load(fr)
-    v2_pallete = _getpallete(num_cls)  # list
-    v2_pallete = np.array(v2_pallete).reshape(-1, 3)
-    assert len(v2_pallete) == len(label_to_pallete_idx)
-    return v2_pallete
-
-
-def color_mask_to_label(mask, v_pallete):
-    mask_array = np.array(mask).astype('int32')
-    semantic_map = []
-    for colour in v_pallete:
-        equality = np.equal(mask_array, colour)
-        class_map = np.all(equality, axis=-1)
-        semantic_map.append(class_map)
-    semantic_map = np.stack(semantic_map, axis=-1).astype(np.float32)
-    # pdb.set_trace() # there is only one '1' value for each pixel, run np.sum(semantic_map, axis=-1)
-    label = np.argmax(semantic_map, axis=-1)
-    return label
 
 
 class UnifiedDataset(Dataset):
@@ -76,31 +33,16 @@ class UnifiedDataset(Dataset):
         tokenizer: PreTrainedTokenizer = None,
         image_size = 224,
         video_frame_nums = 10,
-        # avqa
         avqa_task=False,
-        avvp_task = False,
-        multi_frames = False,
-        image_scale_nums = 2,
-        token_nums_per_scale = 3,
-        # audio referred image grounding task
-        arig_task = False,
-        # av caption task
-        avcap_task = False,
+        ave_task = False
     ) -> None:
         super().__init__()
 
         self.mode=mode
         self.video_processor = video_processor
-        self.multi_frames = multi_frames
         self.tokenizer = tokenizer
         self.image_size = image_size
         self.video_frame_nums = video_frame_nums
-
-        # if avss_task or ms3_task or s4_task or ref_avs_task:
-        token_nums = image_scale_nums * token_nums_per_scale
-        mask_token = [f'<mask_{i}>' for i in range(token_nums)]
-        self.mask_token = ''.join(mask_token)
-        print('mask token: ',self.mask_token)
 
         self.samples = []
         self.tot = 0
@@ -108,20 +50,19 @@ class UnifiedDataset(Dataset):
         ### avqa data
         if avqa_task:
             self.add_avqa_task_samples()
-    
         
-        if avvp_task:
-            self.add_avvp_task_samples()
-
+        ## ave data
+        if ave_task:
+            self.add_ave_task_samples()
         
         print(f'tot training sample nums: {self.tot}')
 
 
     def add_avqa_task_samples(self):
-        avqa_annotation_path = 'music_avqa_valid_train_samples.json'
+        avqa_annotation_path = 'label_file/label_new/music_avqa_valid_train_samples.json'
         avqa_data_root = 'label_file/caption_gemini/avqa_converted_label'
         tot = 0
-        my_path='/'
+        my_path=''
         with open(avqa_annotation_path,'r') as f:
             samples = json.load(f)
         for sample in samples:
@@ -136,10 +77,6 @@ class UnifiedDataset(Dataset):
             label_path = join(avqa_data_root, str(question_id)+'.txt')
             output = self.read_label(label_path)
 
-            # if(len(output)>600):
-            #     drop=len(output)-600
-            #     output_new=output[drop:]
-            # else:
             
             output_new=output
 
@@ -165,36 +102,37 @@ class UnifiedDataset(Dataset):
         self.tot += tot
 
 
-
-
-    def add_avvp_task_samples(self):
-        avvp_annotation_path = 'train_samples.json'
-        avvp_data_root = '/'
+    def add_ave_task_samples(self):
+        ave_annotation_path = 'AVE_Dataset/valid_train_samples.json'
+        ave_data_root = 'AVE_Dataset'
         tot = 0
-        with open(avvp_annotation_path,'r') as f:
+        with open(ave_annotation_path,'r') as f:
             samples = json.load(f)
         for sample in samples:
-            filename = sample['filename']
-            vid = sample['vid']
             event = sample['event']
-            audio_path = join(avvp_data_root,'audio_data',vid+'.mp3')
-            video_path = join(avvp_data_root,'llp_videos',vid+'.mp4')
-            instruction = f'This is an image:\n<video_start><video><video_end>\n<question_start>Please answer this question: {event}'+'<question_end>'
+            vid = sample['vid']
+            start_time = sample['start_time']
+            end_time = sample['end_time']
+            audio_path = join(ave_data_root,'audio_data',vid+'.mp3')
+            video_path = join(ave_data_root,'AVE',vid+'.mp4')
+            label_path = join(ave_data_root,'converted_label',vid+'.txt')
+            output = self.read_label(label_path)
+            instruction = f'This is a video:\n<video_start><video><video_end>\nThis is an audio:\n<audio_start><audio><audio_end>\nPlease describe the events and time range that occurred in the video.'
+            # simple_output = f'event:{event} start time:{start_time} end time:{end_time}'
             self.samples.append(
                 {
                     'audio_path':audio_path,
                     'video_path':video_path,
-                    'output': event,
-                    'task_name':'avvp',
+                    # 'label_path':label_path,
+                    'output': output,
+                    # 'output':simple_output,
+                    'task_name':'ave',
                     'instruction':instruction,
                 }
             )
             tot += 1
-        print(f'avvp sample nums: {tot}')
+        print(f'ave sample nums: {tot}')
         self.tot += tot
-
-
-
 
     def read_label(self,label_path):
         with open(label_path,'r') as f:
@@ -221,7 +159,7 @@ class UnifiedDataset(Dataset):
                 {"role": "user", "content": instruction},
             ]
             instruction = self.tokenizer.apply_chat_template(conversation=messages,add_generation_prompt=True,tokenize=False)
-            output = output + '</s>'
+            output = output + '<|eot_id|>'
         data = {
             'instruction':instruction,
             'output':output,
@@ -273,7 +211,7 @@ class UnifiedDataset(Dataset):
             audio_feature = torch.stack(audio_feature,dim=0) # t,L,128
             data['audio'] = audio_feature
 
-        elif task_name == 'avvp':
+        elif task_name == 'ave':
             audio_path = sample['audio_path']
             video_path = sample['video_path']
             ### process video
@@ -297,17 +235,40 @@ class UnifiedDataset(Dataset):
             ### process audio
             audio_feature = []
             audio, sr = librosa.load(audio_path,sr=16000,mono=True)
+            # length = len(audio)
+            # tot = 10
+            # nums_per_second = length / tot
+            # audio = audio[ : int(tot * nums_per_second)]
+            # audio = torch.from_numpy(audio).unsqueeze(0)
+            # fbank = preprocess(audio)
+            # fbank = fbank.squeeze(0).to(torch.float32) # L,128   1s -> 98 tokens
+            # audio_feature = fbank.reshape(tot,-1,fbank.shape[-1])
+
             length = len(audio)
             tot = 10
-            nums_per_second = int(length / tot)
-
-
             indices = [i for i in range(tot)]
+            nums_per_second = int(length / tot)
+            # audio = audio[: tot * nums_per_second]
+            # if len(audio) < tot * nums_per_second:
+            #     sil = np.zeros(tot * nums_per_second - len(audio), dtype=float)
+            #     audio = np.concatenate((audio, sil),axis=0)
+            # audio = torch.from_numpy(audio) # L,
+            # audio = audio.unsqueeze(0)
+            # audio = preprocess(audio)
+            # audio = audio.to(torch.float32) # 1,L,128   T=1
+            # data['audio'] = audio
+            
             for indice in indices:
                 start_time = max(0, indice)
                 end_time = min(tot, indice + 1)
                 audio_seg = audio[int(start_time * nums_per_second) : int(nums_per_second * end_time)]
-
+                # audio_seg = audio[int(indice*sr):int((indice+1)*sr)]
+                # if indice - 0.5 < 0:
+                #     sil = np.zeros(2 * nums_per_second - len(audio_seg), dtype=float)
+                #     audio_seg = np.concatenate((sil, audio_seg),axis=0)
+                # if indice + 1.5 > tot:
+                #     sil = np.zeros(2 * nums_per_second - len(audio_seg), dtype=float)
+                #     audio_seg = np.concatenate((audio_seg, sil),axis=0)
                 if len(audio_seg) < 1 * nums_per_second:
                     sil = np.zeros(1 * nums_per_second - len(audio_seg), dtype=float)
                     audio_seg = np.concatenate((audio_seg, sil),axis=0)
@@ -316,7 +277,6 @@ class UnifiedDataset(Dataset):
                 fbank = fbank.squeeze(0).to(torch.float32) # L,128   1s -> 98 tokens
                 audio_feature.append(fbank)
             audio_feature = torch.stack(audio_feature,dim=0) # t,L,128
-
             data['audio'] = audio_feature
 
         return data
@@ -332,33 +292,18 @@ class UnifiedTestDataset(Dataset):
         video_frame_nums = 10,
         # avqa
         avqa_task=False,
-        # avvp task
-        avvp_task = False,
-        multi_frames = False,
-        image_scale_nums = 2,
-        token_nums_per_scale = 3,
-        ref_avs_task = False,
-        test_name = 'test_s',  # for ref-avs: test_s, test_u, test_n
-        # audio referred image grounding task
-        arig_task = False,
-        # avcap task
-        avcap_task = False,
+        # ave task
+        ave_task = False,
     ) -> None:
         super().__init__()
 
         self.mode=mode
         self.video_processor = video_processor
-        self.multi_frames = multi_frames
         self.tokenizer = tokenizer
         self.image_size = image_size
         self.video_frame_nums = video_frame_nums
-        self.test_name = test_name
 
-        # if avss_task or ms3_task or s4_task or ref_avs_task:
-        token_nums = image_scale_nums * token_nums_per_scale
-        mask_token = [f'<mask_{i}>' for i in range(token_nums)]
-        self.mask_token = ''.join(mask_token)
-        print('mask token: ',self.mask_token)
+
 
         self.samples = []
         self.tot = 0
@@ -367,18 +312,19 @@ class UnifiedTestDataset(Dataset):
         if avqa_task:
             self.add_avqa_task_samples()
 
-        if avvp_task:
-            self.add_avvp_task_samples()
+        ### ave data
+        if ave_task:
+            self.add_ave_task_samples()
 
         
         print(f'tot test sample nums: {self.tot}')
 
 
     def add_avqa_task_samples(self):
-        avqa_annotation_path = 'music_avqa_test_samples.json'
-        avqa_data_root = 'music-avqa'
+        avqa_annotation_path = 'label_file/label_new/music_avqa_test_samples.json'
+        avqa_data_root = '/group/40061/cserdu/data/music-avqa'
         tot = 0
-        my_path='/'
+        my_path=''
         with open(avqa_annotation_path,'r') as f:
             samples = json.load(f)
         for sample in samples:
@@ -407,32 +353,31 @@ class UnifiedTestDataset(Dataset):
         print(f'avqa sample nums: {tot}')
 
 
-
-    def add_avvp_task_samples(self):
-        avvp_annotation_path = 'test_samples.json'
-        avvp_data_root = '/'
+    def add_ave_task_samples(self):
+        ave_annotation_path = 'AVE_Dataset/test_samples.json'
+        ave_data_root = 'AVE_Dataset'
         tot = 0
-        with open(avvp_annotation_path,'r') as f:
+        with open(ave_annotation_path,'r') as f:
             samples = json.load(f)
         for sample in samples:
-            filename = sample['filename']
-            vid = sample['vid']
             event = sample['event']
-            audio_path = join(avvp_data_root,'audio_data',vid+'.mp3')
-            video_path = join(avvp_data_root,'llp_videos',vid+'.mp4')
-            instruction = f'This is an image:\n<video_start><video><video_end>\n<question_start>Please answer this question: {event}'+'<question_end>'
+            vid = sample['vid']
+            start_time = sample['start_time']
+            end_time = sample['end_time']
+            audio_path = join(ave_data_root,'audio_data',vid+'.mp3')
+            video_path = join(ave_data_root,'AVE',vid+'.mp4')
+            instruction = f'This is a video:\n<video_start><video><video_end>\nThis is an audio:\n<audio_start><audio><audio_end>\nPlease describe the events and time range that occurred in the video.'
             self.samples.append(
                 {
                     'audio_path':audio_path,
                     'video_path':video_path,
-                    'output': event,
-                    'task_name':'avvp',
+                    'task_name':'ave',
                     'instruction':instruction,
+                    'output': f'event:{event} start_time:{start_time} end_time:{end_time}'
                 }
             )
             tot += 1
-        print(f'avvp sample nums: {tot}')
-        self.tot += tot
+        print(f'ave sample nums: {tot}')
 
 
 
@@ -462,7 +407,7 @@ class UnifiedTestDataset(Dataset):
                 {"role": "user", "content": instruction},
             ]
             instruction = self.tokenizer.apply_chat_template(conversation=messages,add_generation_prompt=True,tokenize=False)
-            output = output + '</s>'
+            output = output + '<|eot_id|>'
         
         data = {
             'instruction': instruction,
@@ -524,8 +469,7 @@ class UnifiedTestDataset(Dataset):
             data['vid'] = vid
             data['qid'] = qid
 
-
-        elif task_name == 'avvp':
+        elif task_name == 'ave':
             audio_path = sample['audio_path']
             video_path = sample['video_path']
             ### process video
@@ -544,21 +488,28 @@ class UnifiedTestDataset(Dataset):
                 frames.append(frame)
             frames = self.video_processor.preprocess(frames,return_tensors='pt')
             video = frames['pixel_values']  # t,c,h,w
-
+            data['video'] = video
+            data['video_path'] = video_path
+            
+            ### process audio
             audio_feature = []
             audio, sr = librosa.load(audio_path,sr=16000,mono=True)
-
-
             length = len(audio)
             tot = 10
+            indices = [i for i in range(tot)]
             nums_per_second = int(length / tot)
-            indices = [i for i in range(10)]
             for indice in indices:
                 start_time = max(0, indice)
                 end_time = min(tot, indice + 1)
                 audio_seg = audio[int(start_time * nums_per_second) : int(nums_per_second * end_time)]
-
-                if indice + 1 > tot:
+                # audio_seg = audio[int(indice*sr):int((indice+1)*sr)]
+                # if indice - 0.5 < 0:
+                #     sil = np.zeros(2 * nums_per_second - len(audio_seg), dtype=float)
+                #     audio_seg = np.concatenate((sil, audio_seg),axis=0)
+                # if indice + 1.5 > tot:
+                #     sil = np.zeros(2 * nums_per_second - len(audio_seg), dtype=float)
+                #     audio_seg = np.concatenate((audio_seg, sil),axis=0)
+                if len(audio_seg) < 1 * nums_per_second:
                     sil = np.zeros(1 * nums_per_second - len(audio_seg), dtype=float)
                     audio_seg = np.concatenate((audio_seg, sil),axis=0)
                 audio_seg = torch.from_numpy(audio_seg).unsqueeze(0)
@@ -566,14 +517,8 @@ class UnifiedTestDataset(Dataset):
                 fbank = fbank.squeeze(0).to(torch.float32) # L,128   1s -> 98 tokens
                 audio_feature.append(fbank)
             audio_feature = torch.stack(audio_feature,dim=0) # t,L,128
-            data.update(
-                {
-                    'audio':audio_feature,
-                    'video':video,
-                    'audio_path':audio_path,
-                    'video_path':video_path,
-                }
-            )
+            data['audio'] = audio_feature
+            data['audio_path'] = audio_path
 
 
         return data
@@ -619,10 +564,7 @@ class DataCollatorForUnifiedDataset(object):
             audio = instance.get('audio',None)
             if audio is not None:
                 X_modals['<audio>'] = audio
-            
-            mask = instance.get('mask',None)
-            if mask is not None:
-                X_modals['<mask>'] = mask
+
             
             batch_X_modals.append(X_modals)
 
@@ -676,6 +618,12 @@ class DataCollatorForUnifiedTestDataset(object):
             instruction_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(instruction))
             output_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(output))
             
+            # if task_name in ['ms3','s4','avss','ref-avs']:
+            #     input_ids = instruction_ids + output_ids
+            #     label = [-100] * len(instruction_ids) + output_ids
+            # else:
+            #     input_ids = instruction_ids
+            #     label = [-100] * len(instruction_ids)
 
             input_ids = instruction_ids
             label = [-100] * len(instruction_ids)
@@ -697,10 +645,6 @@ class DataCollatorForUnifiedTestDataset(object):
                 X_modals['<audio>'] = audio
                 metadata['audio_path'] = instance.get('audio_path','')
             
-            mask = instance.get('mask',None)
-            if mask is not None:
-                X_modals['<mask>'] = mask
-                metadata['mask_path'] = instance.get('mask_path','')
             
             batch_X_modals.append(X_modals)
             batch_metadata.append(metadata)
@@ -717,25 +661,13 @@ class DataCollatorForUnifiedTestDataset(object):
 
 def get_dataset_collator(
     data_args,tokenizer: transformers.PreTrainedTokenizer,
-    image_processor=None,mode='train',
-    image_scale_nums = 2, token_nums_per_scale = 3, test_name = 'test_s',
-):
+    image_processor=None,mode='train'):
     if mode == 'train':
         dataset = UnifiedDataset(
             video_processor=image_processor,
             tokenizer=tokenizer,
             avqa_task=data_args.avqa_task,
-            ave_task=data_args.ave_task,
-            avvp_task = data_args.avvp_task,
-            arig_task = data_args.arig_task, 
-            avss_task=data_args.avss_task,
-            ms3_task=data_args.ms3_task,
-            s4_task=data_args.s4_task,
-            ref_avs_task=data_args.ref_avs_task,
-            avcap_task=data_args.avcap_task,
-            multi_frames=data_args.multi_frames,
-            image_scale_nums=image_scale_nums,
-            token_nums_per_scale=token_nums_per_scale
+            ave_task=data_args.ave_task
         )
         data_collator = DataCollatorForUnifiedDataset(tokenizer=tokenizer)
     
@@ -744,18 +676,7 @@ def get_dataset_collator(
             video_processor=image_processor,
             tokenizer=tokenizer,
             avqa_task=data_args.avqa_task,
-            ave_task=data_args.ave_task,
-            avvp_task = data_args.avvp_task,
-            arig_task = data_args.arig_task, 
-            avcap_task = data_args.avcap_task,
-            avss_task=data_args.avss_task,
-            ms3_task=data_args.ms3_task,
-            s4_task=data_args.s4_task,
-            ref_avs_task=data_args.ref_avs_task,
-            test_name=test_name,
-            multi_frames=data_args.multi_frames,
-            image_scale_nums=image_scale_nums,
-            token_nums_per_scale=token_nums_per_scale
+            ave_task=data_args.ave_task
         )
         data_collator = DataCollatorForUnifiedTestDataset(tokenizer=tokenizer)
     

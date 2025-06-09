@@ -6,18 +6,18 @@ import transformers
 @dataclass
 class ModelArguments:  
     # llm
-    model_name_or_path: Optional[str] = field(default="video-llama2/Mistral-7B-Instruct-v0.2")
+    model_name_or_path: Optional[str] = field(default="/data/users/henghui_du/pretrain/video-llama2/Mistral-7B-Instruct-v0.2")
     freeze_backbone: bool = field(default=True, metadata={"help": "Whether to freeze the LLM backbone."})
     llm_name: str = field(default='qwen')
     ## visual module
-    vit_ckpt_path: str = field(default='pretrain/openai-clip-vit-large-patch14-224')
+    vit_ckpt_path: str = field(default='/group/40061/cserdu/pretrain/openai-clip-vit-large-patch14-224')
     select_layer_list = [14,23]
     select_feature: str = field(default='patch')
     image_size: int = field(default=224)
     patch_size: int = field(default=14)
     visual_query_token_nums: int = field(default=32)
     ## audio module
-    BEATs_ckpt_path: str = field(default='pretrain/beats/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2.pt')
+    BEATs_ckpt_path: str = field(default='/group/40061/cserdu/pretrain/beats/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2.pt')
     audio_query_token_nums: int = field(default=32)
     ## seg module
     prompt_embed_dim: int = field(default=256)
@@ -51,17 +51,9 @@ class DataArguments:
     image_caption_task: bool = field(default=False)
     video_caption_task: bool = field(default=False)
     audio_caption_task: bool = field(default=False)
-    segmentation_task: bool = field(default=False)
     # fine-tune
     avqa_task: bool = field(default=False)
     ave_task: bool = field(default=False)
-    avvp_task: bool = field(default=False)
-    arig_task: bool = field(default=False)
-    ms3_task: bool = field(default=False)
-    s4_task : bool = field(default=False)
-    avss_task: bool = field(default=False)
-    avcap_task: bool = field(default=False)
-    ref_avs_task: bool = field(default=False)
     multi_frames: bool = field(default=False) # avs task input single frame
 
 
@@ -96,22 +88,20 @@ class TrainingArguments(transformers.TrainingArguments):
         metadata={"help": "How many bits to use."}
     )
     lora_enable: bool = False
-    lora_r: int = 44
+    lora_r: int = 444
     lora_alpha: int = 16
     lora_dropout: float = 0.05
     lora_weight_path: str = ""
     lora_bias: str = "none"
 
-    ce_loss_weight: float = field(default=1.0)
-    dice_loss_weight: float = field(default=0.5)
-    bce_loss_weight: float = field(default=2.0)
     ## my
     reserved_modality: str = field(default=None)
     loramethod: str = field(default=None)
+    blc_alpha: float = field(default=0.5)
+    blc_weight: float = field(default=0.5)
 
     audio_branch: bool = field(default=False)
     visual_branch: bool = field(default=False)
-    seg_branch: bool = field(default=False)
 
     save_modules: str = field(default='vl_projector,al_projector,lora')
 
