@@ -33,6 +33,14 @@ Basic Dependencies:
 * transformers == 4.37.2
 * deepspeed == 0.12.6
 
+### 🥑 Used pre-trained weights:
+Multi-modal Encoder Weights:
+- download visual encoder [openai-clip-vit-large-patch14](https://huggingface.co/openai/clip-vit-large-patch14)
+- download audio encoder [Fine-tuned BEATs_iter3+ (AS2M)](https://github.com/microsoft/unilm/blob/master/beats/README.md)
+
+LLM Weights:
+- download [LLaMA-2-Chat-HF](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)
+
 ### 🌴 Prepare datasets
 In this repo, we take the audio-visual-text case as an example. Pretrain based on llama2-7b-chat-hf model.
 
@@ -58,11 +66,11 @@ models/unified_arch.py
 ```
 
 ### 🔥 Stage 1: pre-train projectors
-pre-train visual projector, run:
+It takes about 24h to pre-train the visual projector, using 20 A100 40g GPUs:
 ```
 sh scripts/pretrain/pretrain_visual.sh
 ```
-pre-train audio projector, run:
+It takes about 1h to pre-train the audio projector, using 16 A100 40g GPUs:
 ```
 sh scripts/pretrain/pretrain_audio.sh
 ```
@@ -74,7 +82,7 @@ sh scripts/finetune/finetune.py
 
 ```
 
-Here we take MUSIC-AVQA as an example, run:
+Here we take MUSIC-AVQA as an example, and it takes about 5-6h, using 16 A100 40g GPUs:
 ```
 sh scripts/finetune/ft.sh
 ```
