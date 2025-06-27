@@ -74,6 +74,7 @@ It takes about 1h to pre-train the audio projector, using 16 A100 40g GPUs:
 ```
 sh scripts/pretrain/pretrain_audio.sh
 ```
+We also release our pre-trained projectors for llama2-7b-chat-hf: Download [audio projector checkpoint](https://huggingface.co/ahsgdxhs/Crab/blob/main/audio_pretrain.bin), [audio projector checkpoint](https://huggingface.co/ahsgdxhs/Crab/blob/main/visual_pretrain.bin).
 
 ### 🔥 Stage 2: fine-tuning
 Set the path of pre-trained projectors of line 134-135 at:
