@@ -47,6 +47,7 @@ In this repo, we take the audio-visual-text case as an example. Pretrain based o
 - Download image and video pretrain dataset from [Video-LLaVA](https://github.com/PKU-YuanGroup/Video-LLaVA/blob/main/TRAIN_AND_VALIDATE.md);
 - Download audio pretrain dataset from [AudioCaps](https://github.com/cdjkim/audiocaps);
 - The used fine-tuning dataset is MUSIC-AVQA. Prepare the corresponding data and annotation [Here](https://github.com/GeWu-Lab/Crab?tab=readme-ov-file).
+- In addition, get data and annotation of the AVE dataset [Here](https://github.com/GeWu-Lab/Crab?tab=readme-ov-file).
 
 Set the path of pretrain dataset at:
 ```
@@ -56,6 +57,7 @@ Set the path of finetuning dataset at
 ```
 dataset/unified_dataset.py
 ```
+
 
 ## 🔑 Training
 
