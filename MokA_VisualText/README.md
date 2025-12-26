@@ -24,10 +24,12 @@ Then, calculate the Acc/Score:
 python MokA_VisualText/eval_benchmarks/mmbench/eval_mmbench.py
 ```
 
-Our predicted results of specific benchmarks are shown in the corresponding `merged.jsonl` files.
 
 
 ### Results
+
+
+Our predicted results are available in the `merged.jsonl` files located in the corresponding benchmark directories.
 
 | Dataset | Acc/Score |
 | --- | --- |
