@@ -22,6 +22,10 @@
 </table>
 
 
+## 🌴 Update
+We have updated the organized code, checkpoint and predicted results of visual-text case!
+
+Please refer to MokA_VisualText/README.md.
 
 
 ## 🚀 Quick Start
