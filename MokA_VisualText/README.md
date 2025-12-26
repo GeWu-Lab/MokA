@@ -2,10 +2,16 @@
 
 
 ### Train
+
+Stage 1 is the same as the audio-visual-text case. And the used visual projector is also the same: [visual projector checkpoint](https://huggingface.co/ahsgdxhs/Crab/blob/main/visual_pretrain.bin).
+
+Stage 2: SFT
+
 ```
 sh MokA_VisualText/shell/train.sh
 ```
-Download the used json of train data [HERE](https://drive.google.com/file/d/1EEM3AsO6da_Hbb9I4YnhTN2V29mzS-rp/view?usp=drive_link).
+
+Download the used json of train data [HERE](https://drive.google.com/file/d/1EEM3AsO6da_Hbb9I4YnhTN2V29mzS-rp/view?usp=drive_link). A small set of multiple-choice type instructions is integrated besides the original LLaVA-Instruct-150K.
 
 ### Inference
 Use the last checkpoint. Take MMBench as an example, the command would be:
