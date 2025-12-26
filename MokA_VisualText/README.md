@@ -18,7 +18,7 @@ Then, calculate the Acc/Score:
 python MokA_VisualText/eval_benchmarks/mmbench/eval_mmbench.py
 ```
 
-Our predcted results of specific benchmarks are shown in corresponding `merged.jsonl` files.
+Our predicted results of specific benchmarks are shown inthe  corresponding `merged.jsonl` files.
 
 
 ### Results
