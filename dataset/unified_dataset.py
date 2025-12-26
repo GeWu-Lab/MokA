@@ -117,7 +117,7 @@ class UnifiedDataset(Dataset):
             video_path = join(ave_data_root,'AVE',vid+'.mp4')
             label_path = join(ave_data_root,'converted_label',vid+'.txt')
             output = self.read_label(label_path)
-            instruction = f'This is a video:\n<video_start><video><video_end>\nThis is an audio:\n<audio_start><audio><audio_end>\nPlease describe the events and time range that occurred in the video.'
+            instruction = f'This is a video:\n<video_start><video><video_end>\nThis is an audio:\n<audio_start><audio><audio_end>\n<question_start>Please describe the events and time range that occurred in the video.<question_end>'
             # simple_output = f'event:{event} start time:{start_time} end time:{end_time}'
             self.samples.append(
                 {
@@ -159,7 +159,7 @@ class UnifiedDataset(Dataset):
                 {"role": "user", "content": instruction},
             ]
             instruction = self.tokenizer.apply_chat_template(conversation=messages,add_generation_prompt=True,tokenize=False)
-            output = output + '<|eot_id|>'
+            output = output + '</s>'
         data = {
             'instruction':instruction,
             'output':output,
@@ -366,7 +366,7 @@ class UnifiedTestDataset(Dataset):
             end_time = sample['end_time']
             audio_path = join(ave_data_root,'audio_data',vid+'.mp3')
             video_path = join(ave_data_root,'AVE',vid+'.mp4')
-            instruction = f'This is a video:\n<video_start><video><video_end>\nThis is an audio:\n<audio_start><audio><audio_end>\nPlease describe the events and time range that occurred in the video.'
+            instruction = f'This is a video:\n<video_start><video><video_end>\nThis is an audio:\n<audio_start><audio><audio_end>\n<question_start>Please describe the events and time range that occurred in the video.<question_end>'
             self.samples.append(
                 {
                     'audio_path':audio_path,
@@ -407,7 +407,7 @@ class UnifiedTestDataset(Dataset):
                 {"role": "user", "content": instruction},
             ]
             instruction = self.tokenizer.apply_chat_template(conversation=messages,add_generation_prompt=True,tokenize=False)
-            output = output + '<|eot_id|>'
+            output = output + '</s>'
         
         data = {
             'instruction': instruction,
