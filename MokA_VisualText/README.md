@@ -11,7 +11,7 @@ Stage 2: SFT
 sh MokA_VisualText/shell/train.sh
 ```
 
-Download the used json of train data [HERE](https://drive.google.com/file/d/1EEM3AsO6da_Hbb9I4YnhTN2V29mzS-rp/view?usp=drive_link). A small set of multiple-choice type instructions is integrated besides the original LLaVA-Instruct-150K.
+Download the used JSON of train data [HERE](https://drive.google.com/file/d/1EEM3AsO6da_Hbb9I4YnhTN2V29mzS-rp/view?usp=drive_link). A small set of multiple-choice type instructions is integrated with the original LLaVA-Instruct-150K.
 
 ### Inference
 Use the last checkpoint. Take MMBench as an example, the command would be:
