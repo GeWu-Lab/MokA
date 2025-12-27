@@ -147,7 +147,7 @@ Our results are:
 
 
 
-## 🍃 Our checkpints
+## 🍃 Our checkpoints
 
 - [MUSIC-AVQA](https://huggingface.co/yake0409/MokA_AudioVisualText/tree/main/AVQA_checkpoint)
 - [AVE](https://huggingface.co/yake0409/MokA_AudioVisualText/tree/main/AVE_data)
