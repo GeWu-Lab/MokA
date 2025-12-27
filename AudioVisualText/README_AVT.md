@@ -1,6 +1,6 @@
 # Training and Inference Instruction
 
-❗️❗️❗️The root path of all the following scirpts is `AudioVisualText`. 
+❗️❗️❗️The root path of all the following scripts is `AudioVisualText`. 
 ```
 cd AudioVisualText
 ```
@@ -17,7 +17,7 @@ cd AudioVisualText
 
 ### Set dataset path and pretrained weight path
 
-Set the path of the pretrain dataset at:
+Set the path of the pretrain dataset to:
 ```
 dataset/pretrain_dataset.py
 ```
