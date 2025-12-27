@@ -13,6 +13,7 @@ for line in lines:
 vocab = list(vocab)
 print(len(vocab),vocab)
 mapping = {}
+mapping['none'] = 0
 for i,event in enumerate(vocab):
     event = event.lower()
     mapping[event] = i + 1
