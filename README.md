@@ -75,7 +75,7 @@ Read [VisualText/README_VT.md](https://github.com/GeWu-Lab/MokA/blob/main/Visual
 @article{wei2025moka,
   title={MokA: Multimodal Low-Rank Adaptation for MLLMs},
   author={Wei, Yake and Miao, Yu and Zhou, Dongzhan and Hu, Di},
-  journal={arXiv preprint arXiv:2506.05191},
+  journal={{Advances in Neural Information Processing Systems},
   year={2025}
 }
 ```
