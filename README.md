@@ -23,7 +23,7 @@
 
 
 ## 🌴 Update
-We have updated the organized code, checkpoint and predicted results!
+We have updated the organized code, checkpoint, and predicted results!
 
 
 
