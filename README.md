@@ -67,7 +67,7 @@ In this repo, we take the audio-visual-text and visual-text case as an example. 
 Read [AudioVisualText/README_AVT.md](https://github.com/GeWu-Lab/MokA/blob/main/AudioVisualText/README_AVT.md) for the detailed information.
 
 ### Visual-Text case
-Read [VisualText/README_AVT.md](https://github.com/GeWu-Lab/MokA/blob/main/VisualText/README_VT.md) for the detailed information.
+Read [VisualText/README_VT.md](https://github.com/GeWu-Lab/MokA/blob/main/VisualText/README_VT.md) for the detailed information.
 
 
 ## 📃 BibTeX
