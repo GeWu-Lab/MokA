@@ -6,7 +6,7 @@
 <p>
 
 
-<h3 align="center"> <a href="https://arxiv.org/abs/2506.05191"> MokA: Multimodal Low-Rank Adaptation for MLLMs</a></h3>
+<h3 align="center"> <a href="https://arxiv.org/abs/2506.05191"> MokA: Multimodal Low-Rank Adaptation for MLLMs (NeurIPS 2025 Oral)</a></h3>
 
 
 
@@ -22,8 +22,8 @@
 </table>
 
 
-## 🌴 Update
-[2025-12-27] We have updated the organized code, checkpoint, and predicted results!
+## 🌴 News
+[2025-12-27] We have updated the code, checkpoints, and predicted results. The training instructions have also been improved!
 
 
 
