@@ -23,7 +23,7 @@
 
 
 ## 🌴 Update
-We have updated the organized code, checkpoint, and predicted results!
+[2025-12-27] We have updated the organized code, checkpoint, and predicted results!
 
 
 
