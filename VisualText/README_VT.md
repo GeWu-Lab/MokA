@@ -69,5 +69,5 @@ Our predicted results are available in the `merged.jsonl` files located in the c
 | POPE | 77.07 |
 | SEED-Bench | 40.80 |
 
-## 🍃 Our checkpints
+## 🍃 Our checkpoints
 [[HERE]](https://huggingface.co/yake0409/MokA_VisualText/tree/main)
