@@ -23,19 +23,12 @@
 
 
 ## 🌴 Update
-We have updated the organized code, checkpoint and predicted results of visual-text case!
+We have updated the organized code, checkpoint and predicted results!
 
-Please refer to MokA_VisualText/README.md.
 
 
 ## 🚀 Quick Start
 
-### 🛠️ Requirements and Installation
-Basic Dependencies:
-* Python == 3.9
-* Pytorch == 2.1.0
-* transformers == 4.37.2
-* deepspeed == 0.12.6
 
 ### 🥑 Used pre-trained weights:
 Multi-modal Encoder Weights:
@@ -46,66 +39,35 @@ LLM Weights:
 - download [LLaMA-2-Chat-HF](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)
 
 ### 🌴 Prepare datasets
-In this repo, we take the audio-visual-text case as an example. Pretrain based on llama2-7b-chat-hf model.
+In this repo, we take the audio-visual-text and visual-text case as an example. Pretrain based on llama2-7b-chat-hf model.
+
+#### Stage 1 dataset:
 
 - Download image and video pretrain dataset from [Video-LLaVA](https://github.com/PKU-YuanGroup/Video-LLaVA/blob/main/TRAIN_AND_VALIDATE.md);
-- Download audio pretrain dataset from [AudioCaps](https://github.com/cdjkim/audiocaps);
-- The used fine-tuning dataset is MUSIC-AVQA. Prepare the corresponding data and annotation [Here](https://github.com/GeWu-Lab/Crab?tab=readme-ov-file).
-- In addition, get data and annotation of the AVE dataset [Here](https://github.com/GeWu-Lab/Crab?tab=readme-ov-file).
+- Download audio pretrain dataset from [AudioCaps](https://github.com/cdjkim/audiocaps).
+  
 
-Set the path of pretrain dataset at:
-```
-dataset/pretrain_dataset.py
-```
-Set the path of finetuning dataset at
-```
-dataset/unified_dataset.py
-```
+#### Stage 2 dataset:
+##### Audio-Visual-Text: 
+- AVE annotation & JSON: [HERE](https://huggingface.co/yake0409/MokA_AudioVisualText/tree/main/AVE_data)
+- AVE raw video: [HERE](https://github.com/YapengTian/AVE-ECCV18)
+- MUSIC-AVQA annotation & JSON: [HERE](https://huggingface.co/yake0409/MokA_AudioVisualText/tree/main/MUSIC_AVQA_data)
+- MUSIC-AVQA raw video: [HERE](https://github.com/GeWu-Lab/MUSIC-AVQA)
+
+
+##### Visual-Text: 
+- Download the used JSON of train data [HERE](https://drive.google.com/file/d/1EEM3AsO6da_Hbb9I4YnhTN2V29mzS-rp/view?usp=drive_link). A small set of multiple-choice type instructions is integrated with the original LLaVA-Instruct-150K.
+
 
 
 ## 🔑 Training
 
-replace necessary path of google-bert-base-uncased, clip-vit-large-patch14 and BEATs in:
-```
-models/multimodal_encoder.py
-models/unified_arch.py
-```
+### Audio-Visual-Text case
 
-### 🔥 Stage 1: pre-train projectors
-It takes about 24h to pre-train the visual projector, using 20 A100 40g GPUs:
-```
-sh scripts/pretrain/pretrain_visual.sh
-```
-It takes about 1h to pre-train the audio projector, using 16 A100 40g GPUs:
-```
-sh scripts/pretrain/pretrain_audio.sh
-```
-We also release our pre-trained projectors for llama2-7b-chat-hf: Download [audio projector checkpoint](https://huggingface.co/ahsgdxhs/Crab/blob/main/audio_pretrain.bin), [visual projector checkpoint](https://huggingface.co/ahsgdxhs/Crab/blob/main/visual_pretrain.bin).
+Read `AudioVisualText/README_AVT.md` for the detailed information.
 
-### 🔥 Stage 2: fine-tuning
-Set the path of pre-trained projectors of line 134-135 at:
-```
-sh scripts/finetune/finetune.py
-
-```
-
-Here we take MUSIC-AVQA as an example, and it takes about 5-6h, using 16 A100 40g GPUs:
-```
-sh scripts/finetune/ft.sh
-```
-
-## 🤖 Inference
-Here we take MUSIC-AVQA as an example, run
-```
-sh scripts/finetune/infer.sh
-```
-
-## 🤖 Evaluation
-Here we take MUSIC-AVQA as an example, run
-```
-python evaluation.py
-```
-
+### Visual-Text case
+Read `VisualText/README_AVT.md` for the detailed information.
 
 
 ## 📃 BibTeX
