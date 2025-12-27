@@ -90,14 +90,14 @@ class TrainDataset(Dataset):
                     human_turn = conversation[j]
                     gpt_turn = conversation[j+1]
                     
-                    # 确保是human和gpt的配对
+                    
                     if human_turn['from'] == 'human' and gpt_turn['from'] == 'gpt':
-                        # 去除原有的<image>标记
+                        
                         human_value = human_turn['value'].replace('<image>', '').strip()
-                        # 在开头插入新的格式
+                        
                         human_value = 'This is an image:\n<image_start><image><image_end>\nPlease answer this question: ' + human_value
                         
-                        # 创建单轮对话
+                        
                         single_turn_conversation = [
                             {'from': 'human', 'value': human_value},
                             {'from': 'gpt', 'value': gpt_turn['value']}
@@ -126,12 +126,12 @@ class TrainDataset(Dataset):
         if isinstance(input_ids, list):
             input_ids = torch.tensor(input_ids, dtype=torch.long)
         
-        # 初始化target_ids，全部设为-100
+        
         target_ids = torch.full_like(input_ids.squeeze(), -100, dtype=input_ids.dtype, device=input_ids.device)
         input_ids_squeezed = input_ids.squeeze()
         input_ids_list = input_ids_squeezed.tolist()
         
-        # 寻找 [/INST] ... </s> 的模式
+        
         i = 0
         while i < len(input_ids_list):
             if matches_token_sequence(input_ids_list, i, inst_end_ids):
@@ -166,7 +166,7 @@ class TrainDataset(Dataset):
         image = image.resize((224,224))
         image = self.image_processor.preprocess([image],return_tensors='pt')
         
-        # 检查pixel_values是否包含无效值
+        
         pixel_values = image['pixel_values']
         if torch.isnan(pixel_values).any() or torch.isinf(pixel_values).any():
             raise ValueError(f"Invalid pixel values detected in image {image_path}")
@@ -197,16 +197,16 @@ class TrainDataset(Dataset):
         inputs = instruction.replace('<image>', '<image>' * 32)
 
 
-        ## get input_ids
+        
         input_ids = self.tokenizer.encode(inputs, add_special_tokens=False,return_tensors='pt')
 
 
 
-        ### replace 0 token with <image_pad>
+        
         image_pad_id = self.tokenizer.convert_tokens_to_ids("<image>")
 
 
-        ### get my_image_mask
+        
         my_image_mask = input_ids == image_pad_id
         my_text_mask= input_ids != image_pad_id
 
@@ -267,7 +267,7 @@ class DataCollatorForTrainDataset(object):
         max_len = max(len(feature['input_ids']) for feature in features)
 
 
-        ## self.tokenizer.pad_token_id
+        
         input_ids_pad=2
         target_ids_pad=-100
         attention_mask_pad=False
@@ -306,9 +306,9 @@ class DataCollatorForTrainDataset(object):
                     features[i][key] = F.pad(features[i][key], (0, padding_length), value=attention_mask_pad).unsqueeze(0)
                 batch[key] = torch.cat([features[i][key] for i in range(batch_size)], dim=0)
             elif key == 'position_ids':
-                # 创建一个最长的position_ids序列，所有样本都使用这个
+                
                 max_position_ids = torch.arange(0, max_len, dtype=torch.long)
-                # 所有样本都使用相同的max_position_ids
+                
                 batch[key] = max_position_ids.unsqueeze(0).expand(batch_size, -1).contiguous()
             elif key == 'pixel_values':
                 batch['pixel_values'] = torch.cat([features[i][key] for i in range(batch_size)], dim=0)
@@ -336,7 +336,7 @@ def init_tokenizer(tokenizer):
     added_tokens += seg_tokens
 
     print(f'Added {num_new_tokens} tokens to LLaMA tokenizer: {added_tokens}')
-    ## print id of all added tokens
+    
     for token in added_tokens:
         print(f'Token ID: {tokenizer.convert_tokens_to_ids(token)}')
     
@@ -375,7 +375,7 @@ if __name__ == '__main__':
 
     if training_args.should_log:
         print("Logging is enabled")
-        # The default of training_args.log_level is passive, so we set log level at info here to have that default.
+        
         transformers.utils.logging.set_verbosity_info()
 
 
@@ -386,7 +386,7 @@ if __name__ == '__main__':
     enable_explicit_format()
 
 
-    # Log on each process the small summary:
+    
     logger.warning(
         f'Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}'
         + f'distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}'
@@ -394,7 +394,7 @@ if __name__ == '__main__':
     logger.info(f'Training/evaluation parameters {training_args}')
 
 
-    # Detecting last checkpoint and eventually continue from last checkpoint.
+    
     last_checkpoint = None
     if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
@@ -408,7 +408,7 @@ if __name__ == '__main__':
                 f'Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change '
                 'the `--output_dir` or add `--overwrite_output_dir` to train from scratch.'
             )
-    # Set seed before initializing model.
+    
     set_seed(training_args.seed)
 
     print('########################################################')
@@ -420,7 +420,7 @@ if __name__ == '__main__':
     llama2_path='Llama-2-7b-chat-hf'
     vit_path='clip-vit-large-patch14'
 
-    # 加载配置
+    
     
     print('Loading LLaMA config...')
     llm_config = AutoConfig.from_pretrained(llama2_path, trust_remote_code=True)
@@ -431,7 +431,7 @@ if __name__ == '__main__':
     image_processor = CLIPImageProcessor.from_pretrained(vit_path,local_files_only=True)
 
 
-    # 从llama2加载tokenizer
+    
     print('Loading tokenizer from LLaMA...')
     tokenizer = AutoTokenizer.from_pretrained('Llama-2-7b-chat-hf', trust_remote_code=True)
 
@@ -439,7 +439,7 @@ if __name__ == '__main__':
     print('llm_config.vocab_size',llm_config.vocab_size)
     print('len (tokenizer)',len(tokenizer))
     
-    # 为 Llama-2 tokenizer 设置 chat_template
+    
     tokenizer.chat_template = "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'] %}{% else %}{% set loop_messages = messages %}{% set system_message = false %}{% endif %}{% for message in loop_messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if loop.index0 == 0 and system_message != false %}{% set content = '<<SYS>>\\n' + system_message + '\\n<</SYS>>\\n\\n' + message['content'] %}{% else %}{% set content = message['content'] %}{% endif %}{% if message['role'] == 'user' %}{{ bos_token + '[INST] ' + content.strip() + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' '  + content.strip() + ' ' + eos_token }}{% endif %}{% endfor %}"
 
 
@@ -468,23 +468,23 @@ if __name__ == '__main__':
         'bert_ckpt_path':'bert-base-uncased'
     }
 
-    # 创建 Llava 配置
+    
     print('Creating LlavaConfig...')
     llava_config = LlavaConfig(
         vision_config=vision_config,
         text_config=llm_config,
-        image_token_id=0,  # 根据你的tokenizer设置
+        image_token_id=0,  
         vision_feature_layer=-2,
         vision_feature_select_strategy="default",
     )
     
-    # 初始化模型（直接从预训练路径加载，multi_modal_projector 随机初始化）
+    
     print('Initializing LlavaForConditionalGeneration...')
     model = LlavaForConditionalGeneration(
         llava_config, 
         projector_config=projector_config,
-        llama2_path=llama2_path,  # 直接传入预训练路径
-        vit_path=vit_path  # 直接传入预训练路径
+        llama2_path=llama2_path,  
+        vit_path=vit_path  
     )
 
 
@@ -495,7 +495,7 @@ if __name__ == '__main__':
     visual_adapter_path='visual_pretrain.bin'
     state_dict = torch.load(visual_adapter_path, map_location='cpu')
     embed_tokens_weight = state_dict.pop('model.embed_tokens.weight')
-    ## load embed_tokens_weight to model.language_model.embed_tokens.weight
+    
     model.language_model.embed_tokens.load_state_dict({'weight': embed_tokens_weight}, strict=False)
     print('load embed_tokens_weight to model.language_model.embed_tokens.weight finished...')
 
@@ -506,22 +506,22 @@ if __name__ == '__main__':
             new_state_dict[new_key] = state_dict[key]
     
 
-    ## load new_state_dict to model.model.multi_modal_projector
+    
     model.model.multi_modal_projector.load_state_dict(new_state_dict, strict=False)
 
     print('load new_state_dict to model.model.multi_modal_projector finished...')
 
-    ## multi_model_projector的参数设置为BF16
+    
     for name, param in model.model.multi_modal_projector.named_parameters():
         param.data = param.data.to(torch.bfloat16)
-    ## lm_head的参数设置为BF16
+    
     for name, param in model.lm_head.named_parameters():
         param.data = param.data.to(torch.bfloat16)
 
     print('Model initialization complete!')
 
-    ### freeze model parameters
-    ### only train model.model.multi_modal_projector parameters
+    
+    
     for name, param in model.named_parameters():
         if('model.multi_modal_projector' in name):
             param.requires_grad = True
@@ -533,7 +533,7 @@ if __name__ == '__main__':
     projs = lora_trainable.split(',')
 
 
-    ### select llm parameters to target_modules, if the parameter name contains the proj names, then add to target_modules
+    
     for name, param in model.named_modules():
         if('language_model' in name):
             for proj in projs:
@@ -560,7 +560,7 @@ if __name__ == '__main__':
     model.add_adapter('text',lora_config)
     model.set_adapter(['image','text'])
 
-    # 检查 attn_weight 是否正确设置
+    
     if dist.get_rank() == 0:
         print('=' * 100)
         print(f'[CHECK] Checking attn_weight in LoRA layers after initialization...')
