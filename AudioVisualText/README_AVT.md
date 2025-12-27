@@ -17,7 +17,7 @@ cd AudioVisualText
 
 ### Set dataset path and pretrained weight path
 
-Set the path of pretrain dataset at:
+Set the path of the pretrain dataset at:
 ```
 dataset/pretrain_dataset.py
 ```
@@ -26,7 +26,7 @@ Set the path of finetuning dataset at (line 59, 92, 93, 283, 315, 316):
 dataset/unified_dataset.py
 ```
 
-It needs to replace the `"audio_path"` and `video_path` in the JSON files of MUSIC-AVQA dataset, and put the raw video & audio into the data folders, like:
+It needs to replace the `"audio_path"` and `video_path` in the JSON files of the MUSIC-AVQA dataset, and put the raw video & audio into the data folders, like:
 
 ```
 ├── AVE_data
@@ -95,7 +95,7 @@ Finetuning on AVE dataset:
 sh scripts/finetune/ft_ave.sh
 ```
 
-The model checkpoints will be saved at `output_dir` of the scirpts. We need to use `adapter_model.bin` and `non_lora_trainables.bin` in the checkpoint folders for inference.
+The model checkpoints will be saved at `output_dir` of the scripts. We need to use `adapter_model.bin` and `non_lora_trainables.bin` in the checkpoint folders for inference.
 
 ## 🤖 Inference
 ❗️❗️ Set the ckpt path (`$YOUR_CKPT_PARH`) of fine-tuned models in the `infer_ave.sh` and `infer_avqa.sh`.
@@ -118,7 +118,7 @@ Then, the prediced results will be saved at `$YOUR_CKPT_PARH/inference_results/i
 
 ## 🤖 Evaluation
 
-Set your jsonl path and dataset path at:
+Set your JSONL path and dataset path at:
 ```
 scripts/evaluation/ave_eval.py
 scripts/evaluation/avqa_eval.py
