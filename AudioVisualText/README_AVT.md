@@ -106,7 +106,7 @@ Make sure all the weights are loaded correctly.
 
 Inference on MUSIC-AVQA dataset:
 ```
-sh scripts/finetune/infer_ave.sh
+sh scripts/finetune/infer_avqa.sh
 ```
 
 Inference on AVE dataset:
@@ -150,4 +150,4 @@ Our results are:
 ## 🍃 Our checkpoints
 
 - [MUSIC-AVQA](https://huggingface.co/yake0409/MokA_AudioVisualText/tree/main/AVQA_checkpoint)
-- [AVE](https://huggingface.co/yake0409/MokA_AudioVisualText/tree/main/AVE_data)
+- [AVE](https://huggingface.co/yake0409/MokA_AudioVisualText/tree/main/AVE_checkpoint)
