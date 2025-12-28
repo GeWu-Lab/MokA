@@ -310,6 +310,8 @@ class Linear(nn.Linear, LoraLayer):
         ll=str(r)
         for i in range(len(ll)):
             rr.append(int(ll[i]))
+        
+        self.d_k=rr[0]
 
 
         if rr[0] > 0:
@@ -414,10 +416,8 @@ class Linear(nn.Linear, LoraLayer):
                 key=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
                 value=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
 
-                N_t=torch.sum(question_mask[i,:,:])
 
-
-                score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(N_t)  # shape: (1, token_num, question_length)
+                score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(self.d_k) 
                 score = torch.softmax(score, dim=-1)
                 output = torch.matmul(score, value)  # shape: (1, token_num, 4)
                 attention_outputs=video_mask[i,:,:]*output
@@ -438,9 +438,8 @@ class Linear(nn.Linear, LoraLayer):
                 key=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
                 value=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
 
-                N_t=torch.sum(question_mask[i,:,:])
 
-                score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(N_t)  # shape: (1, token_num, question_length)
+                score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(self.d_k) 
                 score = torch.softmax(score, dim=-1)
                 output = torch.matmul(score, value)  # shape: (1, token_num, 4)
                 attention_outputs=audio_mask[i,:,:]*output
@@ -491,10 +490,9 @@ class Linear(nn.Linear, LoraLayer):
                 key=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
                 value=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
 
-                N_t=torch.sum(question_mask[i,:,:])
 
 
-                score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(N_t) 
+                score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(self.d_k) 
                 score = torch.softmax(score, dim=-1)
                 output = torch.matmul(score, value)  # shape: (1, token_num, 4)
                 attention_outputs=video_mask[i,:,:]*output
@@ -515,9 +513,8 @@ class Linear(nn.Linear, LoraLayer):
                 key=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
                 value=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
 
-                N_t=torch.sum(question_mask[i,:,:])
 
-                score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(N_t)
+                score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(self.d_k)
                 score = torch.softmax(score, dim=-1)
                 output = torch.matmul(score, value)  # shape: (1, token_num, 4)
                 attention_outputs=audio_mask[i,:,:]*output

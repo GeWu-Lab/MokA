@@ -4,7 +4,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score
 
 vocab = set()
-with open('ave_data/Annotations.txt','r') as f:
+with open('Annotations.txt','r') as f:
     lines = f.readlines()
 for line in lines:
     line = line.strip()

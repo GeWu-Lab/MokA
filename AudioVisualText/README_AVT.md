@@ -140,10 +140,10 @@ python scripts/evaluation/avqa_eval.py
 ```
 
 Our results are:
-| Dataset | Total samples| Samples with correct prediction format  | Acc (Right answer/Samples with correct prediction format)|  Acc (Right answer/Total samples)| 
-| --- | --- | --- |--- |--- |
-| AVE |402|398| 77.21 | 76.44 |
-| MUSIC-AVQA | 9129|9035|77.26 |76.46|
+| Dataset | Total samples| Samples with correct prediction format  | Acc (Right answer/Samples with correct prediction format)| 
+| --- | --- | --- |--- |
+| AVE |402|397| 77.06 |
+| MUSIC-AVQA | 9129|9059|77.76 |
 
 
 
