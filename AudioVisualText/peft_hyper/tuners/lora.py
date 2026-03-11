@@ -26,7 +26,7 @@ import torch.nn.functional as F
 from transformers.pytorch_utils import Conv1D
 
 from ..utils import PeftConfig, PeftType, transpose
-
+from .trilinear_cross_modal import trilinear_text_update, trilinear_text_update_packed
 
 @dataclass
 class LoraConfig(PeftConfig):
@@ -64,8 +64,18 @@ class LoraConfig(PeftConfig):
     ### eval
     reserved_modality: str = field(default=None, metadata={"help": "Alpha of blcloss"})
     loramethod: str = field(default=None, metadata={"help": "Alpha of blcloss"})
-
-
+    cross_attn_kv_mode: str = field(
+        default="question",
+        metadata={"help": "KV token source for modality cross-attention: question or full_text."},
+    )
+    cross_modal_mode: str = field(
+        default="trilinear",
+        metadata={"help": "Cross-modal fusion mode for LoRA: pairwise or trilinear."},
+    )
+    trilinear_pack_tokens: bool = field(
+        default=False,
+        metadata={"help": "If True, compact active text/video/audio tokens before Triton trilinear attention."},
+    )
 
     merge_weights: bool = field(
         default=False, metadata={"help": "Merge weights of the original model and the Lora model"}
@@ -141,6 +151,9 @@ class LoraModel(torch.nn.Module):
             "blc_weight": self.peft_config.blc_weight,
             "reserved_modality": self.peft_config.reserved_modality,
             "loramethod": self.peft_config.loramethod,
+            "cross_attn_kv_mode": self.peft_config.cross_attn_kv_mode,
+            "cross_modal_mode": self.peft_config.cross_modal_mode,
+            "trilinear_pack_tokens": self.peft_config.trilinear_pack_tokens,
             "fan_in_fan_out": self.peft_config.fan_in_fan_out,
             "merge_weights": (self.peft_config.merge_weights or self.peft_config.inference_mode)
             and not is_hf_device_map_available,
@@ -288,6 +301,9 @@ class Linear(nn.Linear, LoraLayer):
         lora_dropout: float = 0.0,
         reserved_modality="text",
         loramethod="uni",
+        cross_attn_kv_mode="question",
+        cross_modal_mode = "trilinear",
+        trilinear_pack_tokens: bool = False,
         fan_in_fan_out: bool = False,  # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
         merge_weights: bool = True,
         **kwargs,
@@ -302,7 +318,9 @@ class Linear(nn.Linear, LoraLayer):
         self.blc_weight = blc_weight
 
         self.reserved_modality=reserved_modality
-        
+        self.cross_attn_kv_mode = cross_attn_kv_mode
+        self.cross_modal_mode = cross_modal_mode
+        self.trilinear_pack_tokens = trilinear_pack_tokens
         
         self.fan_in_fan_out = fan_in_fan_out
 
@@ -362,21 +380,36 @@ class Linear(nn.Linear, LoraLayer):
         for i in range(1):
             getattr(self, f"lora_B{i}").eval()
 
+    def _select_kv_mask(self, text_mask: torch.Tensor, question_mask: torch.Tensor) -> torch.Tensor:
+        mode = str(self.cross_attn_kv_mode).lower()
+        if mode == "full_text":
+            return text_mask
+        return question_mask
+
 
 
     def forward(self, x: torch.Tensor, modality_mask:List[torch.Tensor]=None):
+        # Ensure inputs and weights share dtype (avoid float vs bf16 mismatch)
+        weight = transpose(self.weight, self.fan_in_fan_out)
+        if x.dtype != weight.dtype:
+            x = x.to(weight.dtype)
+        bias = self.bias
+        if bias is not None and bias.dtype != x.dtype:
+            bias = bias.to(x.dtype)
+        result = F.linear(x, weight, bias=bias)
 
-        result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)        
 
-            
         ## infer not first forward only text token
         if(('test' in self.loramethod) &(x.size(1)==1) ):
-            # only text token
-            output_a=getattr(self, f"lora_A0")(self.lora_dropout(x))*self.scaling[0]
-            input_b=output_a
-            output_b=getattr(self, f"lora_B0")(input_b)
+            # only text token; cast to lora A/B weight dtype to avoid float vs bf16
+            lora_a0 = getattr(self, "lora_A0")
+            lora_b0 = getattr(self, "lora_B0")
+            inp_a = self.lora_dropout(x).to(lora_a0.weight.dtype)
+            output_a = lora_a0(inp_a) * self.scaling[0]
+            input_b = output_a.to(lora_b0.weight.dtype)
+            output_b = lora_b0(input_b)
 
-            result=output_b+result
+            result = output_b + result
 
             return result
 
@@ -384,149 +417,239 @@ class Linear(nn.Linear, LoraLayer):
         ## infer first forward
         if(('test' in self.loramethod) &(x.size(1)!=1) ):
 
-            text_mask=modality_mask[0]
-            video_mask=modality_mask[1]
-            audio_mask=modality_mask[2]
-            question_mask=modality_mask[3]
+            # Cast modality masks to match x dtype to avoid promotion to float32
+            text_mask = modality_mask[0].to(dtype=x.dtype)
+            video_mask = modality_mask[1].to(dtype=x.dtype)
+            audio_mask = modality_mask[2].to(dtype=x.dtype)
+            question_mask = modality_mask[3].to(dtype=x.dtype)
+
+            kv_mask = self._select_kv_mask(text_mask=text_mask, question_mask=question_mask)
             ## train process
-        
+
             only_inputs=[x*text_mask,x*video_mask,x*audio_mask]
-            # 0: text 
-            # 1: video 
+            # 0: text
+            # 1: video
             # 2: audio
             # 3: question
 
             #### get question mask
 
-            output_a=[]
+            output_a = []
             for i in range(self.lora_num):
-                output_a.append(getattr(self, f"lora_A{i}")(self.lora_dropout(only_inputs[i]))*self.scaling[0])
-            
+                la = getattr(self, f"lora_A{i}")
+                inp = self.lora_dropout(only_inputs[i]).to(la.weight.dtype)
+                output_a.append(la(inp) * self.scaling[0])
 
             ### video_token: cross attention per sample
             video_token=output_a[1]
-            question_token=output_a[0]*question_mask
+            question_token=output_a[0]*kv_mask
             new_video=torch.zeros_like(video_token)
 
-            for i in range(question_token.size(0)):
-                query=video_token[i,:,:].unsqueeze(0)
-                
-                ## get question tokens
-                indices = torch.where(question_mask[i,:,:] == 1)[0]
-                key=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
-                value=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
+            if self.cross_modal_mode == "pairwise":
+
+                for i in range(question_token.size(0)):
+                    query=video_token[i,:,:].unsqueeze(0)
+
+                    ## get KV tokens (question-only or full-text depending on mode)
+                    indices = torch.where(kv_mask[i,:,:] == 1)[0]
+                    if indices.numel() == 0:
+                        new_video[i,:,:] = video_token[i,:,:]
+                        continue
+                    key=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
+                    value=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
 
 
-                score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(self.d_k) 
-                score = torch.softmax(score, dim=-1)
-                output = torch.matmul(score, value)  # shape: (1, token_num, 4)
-                attention_outputs=video_mask[i,:,:]*output
-                new_video[i,:,:]=video_token[i,:,:]+attention_outputs*self.blc_weight
+                    score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(self.d_k)
+                    score = torch.softmax(score, dim=-1)
+                    output = torch.matmul(score, value)  # shape: (1, token_num, 4)
+                    attention_outputs=video_mask[i,:,:]*output
+                    new_video[i,:,:]=video_token[i,:,:]+attention_outputs*self.blc_weight
 
-            ### audio_token: cross attention per sample
-            audio_token=output_a[2]
-            question_token=output_a[0]*question_mask
-            new_audio=torch.zeros_like(audio_token)
+                ### audio_token: cross attention per sample
+                audio_token=output_a[2]
+                question_token=output_a[0]*kv_mask
+                new_audio=torch.zeros_like(audio_token)
 
-            for i in range(question_token.size(0)):
-
-
-                query=audio_token[i,:,:].unsqueeze(0)
-
-                ## get question tokens
-                indices = torch.where(question_mask[i,:,:] == 1)[0]
-                key=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
-                value=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
+                for i in range(question_token.size(0)):
 
 
-                score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(self.d_k) 
-                score = torch.softmax(score, dim=-1)
-                output = torch.matmul(score, value)  # shape: (1, token_num, 4)
-                attention_outputs=audio_mask[i,:,:]*output
-                new_audio[i,:,:]=audio_token[i,:,:]+attention_outputs*self.blc_weight
-            
+                    query=audio_token[i,:,:].unsqueeze(0)
 
-            input_b=[output_a[0],new_video,new_audio]
-            input_b=sum(input_b)
+                    ## get KV tokens (question-only or full-text depending on mode)
+                    indices = torch.where(kv_mask[i,:,:] == 1)[0]
+                    if indices.numel() == 0:
+                        new_audio[i,:,:] = audio_token[i,:,:]
+                        continue
+                    key=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
+                    value=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
 
 
-            output_b=getattr(self, f"lora_B0")(input_b)
+                    score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(self.d_k)
+                    score = torch.softmax(score, dim=-1)
+                    output = torch.matmul(score, value)  # shape: (1, token_num, 4)
+                    attention_outputs=audio_mask[i,:,:]*output
+                    new_audio[i,:,:]=audio_token[i,:,:]+attention_outputs*self.blc_weight
 
-            result=output_b+result
-            
-            return result
+
+                input_b = [output_a[0], new_video, new_audio]
+                input_b = sum(input_b)
+
+                lora_b0 = getattr(self, "lora_B0")
+                input_b = input_b.to(lora_b0.weight.dtype)
+                output_b = lora_b0(input_b)
+
+
+                result=output_b+result
+
+                return result
+
+            if self.cross_modal_mode == "trilinear":
+                text_lora = output_a[0]
+                video_lora = output_a[1] * video_mask
+                audio_lora = output_a[2] * audio_mask
+                if self.trilinear_pack_tokens:
+                    text_updated = trilinear_text_update_packed(
+                        text=text_lora,
+                        video=video_lora,
+                        audio=audio_lora,
+                        text_mask=kv_mask,
+                        video_mask=video_mask,
+                        audio_mask=audio_mask,
+                        alpha=self.blc_weight,
+                        prescale=True,
+                    )
+                else:
+                    selected_text_lora = text_lora * kv_mask
+                    text_updated = trilinear_text_update(
+                        text=selected_text_lora,
+                        video=video_lora,
+                        audio=audio_lora,
+                        alpha=self.blc_weight,
+                        prescale=True,
+                    )
+                    text_updated = text_updated + text_lora * (1 - kv_mask)
+
+                input_b = text_updated + video_lora + audio_lora
+                lora_b0 = getattr(self, "lora_B0")
+                input_b = input_b.to(lora_b0.weight.dtype)
+                output_b = lora_b0(input_b)
+                result=output_b+result
+                return result
 
         ## train
         if('train' in self.loramethod):
 
-            text_mask=modality_mask[0]
-            video_mask=modality_mask[1]
-            audio_mask=modality_mask[2]
-            question_mask=modality_mask[3]
+            text_mask = modality_mask[0].to(dtype=x.dtype)
+            video_mask = modality_mask[1].to(dtype=x.dtype)
+            audio_mask = modality_mask[2].to(dtype=x.dtype)
+            question_mask = modality_mask[3].to(dtype=x.dtype)
+            kv_mask = self._select_kv_mask(text_mask=text_mask, question_mask=question_mask)
             ## train process
-        
+
             only_inputs=[x*text_mask,x*video_mask,x*audio_mask]
-            # 0: text 
-            # 1: video 
+            # 0: text
+            # 1: video
             # 2: audio
 
             #### get question mask
 
             output_a=[]
             for i in range(self.lora_num):
-                output_a.append(getattr(self, f"lora_A{i}")(self.lora_dropout(only_inputs[i]))*self.scaling[0])
-            
+                la = getattr(self, f"lora_A{i}")
+                inp = self.lora_dropout(only_inputs[i]).to(la.weight.dtype)
+                output_a.append(la(inp) * self.scaling[0])
+  
+
 
             ### video_token: cross attention per sample
             video_token=output_a[1]
-            question_token=output_a[0]*question_mask
+            question_token=output_a[0]*kv_mask
             new_video=torch.zeros_like(video_token)
 
-            for i in range(question_token.size(0)):
-                query=video_token[i,:,:].unsqueeze(0)
+            if self.cross_modal_mode == "pairwise":
 
-                ## get question tokens
-                indices = torch.where(question_mask[i,:,:] == 1)[0]
-                key=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
-                value=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
+                for i in range(question_token.size(0)):
+                    query=video_token[i,:,:].unsqueeze(0)
 
-
-
-                score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(self.d_k) 
-                score = torch.softmax(score, dim=-1)
-                output = torch.matmul(score, value)  # shape: (1, token_num, 4)
-                attention_outputs=video_mask[i,:,:]*output
-                new_video[i,:,:]=video_token[i,:,:]+attention_outputs*self.blc_weight
-
-            ### audio_token: cross attention per sample
-            audio_token=output_a[2]
-            question_token=output_a[0]*question_mask
-            new_audio=torch.zeros_like(audio_token)
-
-            for i in range(question_token.size(0)):
+                    ## get KV tokens (question-only or full-text depending on mode)
+                    indices = torch.where(kv_mask[i,:,:] == 1)[0]
+                    if indices.numel() == 0:
+                        new_video[i,:,:] = video_token[i,:,:]
+                        continue
+                    key=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
+                    value=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
 
 
-                query=audio_token[i,:,:].unsqueeze(0)
 
-                ## get question tokens
-                indices = torch.where(question_mask[i,:,:] == 1)[0]
-                key=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
-                value=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
+                    score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(self.d_k)
+                    score = torch.softmax(score, dim=-1)
+                    output = torch.matmul(score, value)  # shape: (1, token_num, 4)
+                    attention_outputs=video_mask[i,:,:]*output
+                    new_video[i,:,:]=video_token[i,:,:]+attention_outputs*self.blc_weight
 
+                ### audio_token: cross attention per sample
+                audio_token=output_a[2]
+                question_token=output_a[0]*kv_mask
+                new_audio=torch.zeros_like(audio_token)
 
-                score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(self.d_k)
-                score = torch.softmax(score, dim=-1)
-                output = torch.matmul(score, value)  # shape: (1, token_num, 4)
-                attention_outputs=audio_mask[i,:,:]*output
-                new_audio[i,:,:]=audio_token[i,:,:]+attention_outputs*self.blc_weight
-            
-
-            input_b=[output_a[0],new_video,new_audio]
-            input_b=sum(input_b)
+                for i in range(question_token.size(0)):
 
 
-            output_b=getattr(self, f"lora_B0")(input_b)
+                    query=audio_token[i,:,:].unsqueeze(0)
 
-            result=output_b+result
-            
-            return result
+                    ## get KV tokens (question-only or full-text depending on mode)
+                    indices = torch.where(kv_mask[i,:,:] == 1)[0]
+                    if indices.numel() == 0:
+                        new_audio[i,:,:] = audio_token[i,:,:]
+                        continue
+                    key=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
+                    value=question_token[i,indices[0]:indices[-1]+1,:].unsqueeze(0)
+
+
+                    score = torch.matmul(query, key.transpose(-2, -1))/ math.sqrt(self.d_k)
+                    score = torch.softmax(score, dim=-1)
+                    output = torch.matmul(score, value)  # shape: (1, token_num, 4)
+                    attention_outputs=audio_mask[i,:,:]*output
+                    new_audio[i,:,:]=audio_token[i,:,:]+attention_outputs*self.blc_weight
+
+                input_b=[output_a[0],new_video,new_audio]
+                input_b=sum(input_b)
+
+                output_b=getattr(self, f"lora_B0")(input_b)
+
+                result=output_b+result
+                return result
+
+            if self.cross_modal_mode == "trilinear":
+                text_lora = output_a[0]
+                video_lora = output_a[1] * video_mask
+                audio_lora = output_a[2] * audio_mask
+                if self.trilinear_pack_tokens:
+                    text_updated = trilinear_text_update_packed(
+                        text=text_lora,
+                        video=video_lora,
+                        audio=audio_lora,
+                        text_mask=kv_mask,
+                        video_mask=video_mask,
+                        audio_mask=audio_mask,
+                        alpha=self.blc_weight,
+                        prescale=True,
+                    )
+                else:
+                    selected_text_lora = text_lora * kv_mask
+                    text_updated = trilinear_text_update(
+                        text=selected_text_lora,
+                        video=video_lora,
+                        audio=audio_lora,
+                        alpha=self.blc_weight,
+                        prescale=True,
+                    )
+                    text_updated = text_updated + text_lora * (1 - kv_mask)
+
+                input_b = text_updated + video_lora + audio_lora
+                lora_b0 = getattr(self, "lora_B0")
+                input_b = input_b.to(lora_b0.weight.dtype)
+                output_b = lora_b0(input_b)
+                result=output_b+result
+                return result
+   

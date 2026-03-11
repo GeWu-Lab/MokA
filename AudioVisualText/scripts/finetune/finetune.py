@@ -23,10 +23,9 @@ def train(attn_implementation=None):
     # print('lalala')
     # return
     global local_rank
-    set_seed(42)
-
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    set_seed(training_args.seed)
 
     output_dir = training_args.output_dir
     saved_config = {
@@ -85,16 +84,19 @@ def train(attn_implementation=None):
         print('lora_nums: ',lora_nums)
         modules_to_save = None
         peft_config = LoraConfig(
-            task_type = "CAUSAL_LM",
-            target_modules = target_modules,
-            inference_mode = False,
-            r = lora_rank, 
-            loramethod= training_args.loramethod,
+            task_type="CAUSAL_LM",
+            target_modules=target_modules,
+            inference_mode=False,
+            r=lora_rank,
+            loramethod=training_args.loramethod,
             reserved_modality=training_args.reserved_modality,
-            lora_alpha = lora_alpha,
-            lora_dropout = lora_dropout,
-            lora_nums = lora_nums,
-            blc_alpha= training_args.blc_alpha,
+            cross_attn_kv_mode=training_args.cross_attn_kv_mode,
+            cross_modal_mode=training_args.cross_modal_mode,
+            trilinear_pack_tokens=training_args.trilinear_pack_tokens,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            lora_nums=lora_nums,
+            blc_alpha=training_args.blc_alpha,
             blc_weight=training_args.blc_weight,
         )
         model = get_peft_model(model, peft_config)
@@ -179,30 +181,105 @@ def train(attn_implementation=None):
             f.write(str(model))
     
     image_processor = model.get_model().visual_encoder.image_processor if training_args.visual_branch else None
-    dataset, collator = get_dataset_collator(data_args=data_args, tokenizer=tokenizer, 
+    dataset, collator = get_dataset_collator(data_args=data_args, tokenizer=tokenizer,
                                              image_processor=image_processor)
     trainer = UnifiedTrainer(model=model, tokenizer=tokenizer, args=training_args,
                              train_dataset=dataset, data_collator=collator)
 
-    if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
-        trainer.train(resume_from_checkpoint=True)
+    # Lightweight resume logic added here since original was not working:
+    # - We do NOT rely on DeepSpeed/Trainer checkpoints, since this codebase only
+    #   writes `finetune_weights.bin` inside each checkpoint directory.
+    # - On restart, we scan checkpoint-* from latest to earliest, find the first
+    #   one that contains finetune_weights.bin, and load those weights into the
+    #   model before starting a fresh Trainer run. This preserves learned LoRA
+    #   / projector weights even if optimizer state is not restored.
+    output_path = pathlib.Path(training_args.output_dir)
+    ckpt_dirs = sorted(
+        output_path.glob("checkpoint-*"),
+        key=lambda p: int(p.name.split("-")[1]) if p.name.split("-")[1].isdigit() else -1,
+    )
+
+    resume_weights_path = None
+    resume_ckpt_dir = None
+    for ckpt in reversed(ckpt_dirs):
+        candidate = ckpt / "finetune_weights.bin"
+        if candidate.exists():
+            resume_weights_path = candidate
+            resume_ckpt_dir = ckpt
+            break
+
+    if resume_weights_path is not None:
+        rank0_print(f"Loading finetune weights from {resume_weights_path} before training.")
+        try:
+            weights = torch.load(resume_weights_path, map_location="cpu")
+            missing, unexpected = model.load_state_dict(weights, strict=False)
+            rank0_print(f"Loaded finetune weights; missing={len(missing)}, unexpected={len(unexpected)}")
+        except Exception as e:
+            rank0_print(f"[Warning] Failed to load finetune weights from {resume_weights_path}: {e}. Proceeding with base weights.")
+
+    # So the Trainer resumes step/epoch and skips to the right point in the loop, pass the
+    # checkpoint dir. We only save finetune_weights.bin + trainer_state.json (no DeepSpeed shards),
+    # so we must skip DeepSpeed's load when it would fail.
+    if resume_ckpt_dir is not None:
+        ckpt_path = str(resume_ckpt_dir)
+        trainer_state_path = os.path.join(ckpt_path, "trainer_state.json")
+        if os.path.isfile(trainer_state_path):
+            import transformers.trainer as _tr_module
+            _orig_ds_load = _tr_module.deepspeed_load_checkpoint
+            def _skip_ds_load_if_our_format(engine, path):
+                if path and os.path.isfile(os.path.join(path, "finetune_weights.bin")) and os.path.isfile(os.path.join(path, "trainer_state.json")):
+                    rank0_print("Resuming from our checkpoint format; skipping DeepSpeed load (model already loaded).")
+                    return
+                _orig_ds_load(engine, path)
+            _tr_module.deepspeed_load_checkpoint = _skip_ds_load_if_our_format
+            try:
+                trainer.train(resume_from_checkpoint=ckpt_path)
+            finally:
+                _tr_module.deepspeed_load_checkpoint = _orig_ds_load
+        else:
+            trainer.train()
     else:
         trainer.train()
     trainer.save_state()
 
     model.config.use_cache = True
 
-    if training_args.lora_enable:
-        state_dict = get_peft_state_maybe_zero_3(model.named_parameters(), training_args.lora_bias)
-        non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.named_parameters())
-        if training_args.local_rank == 0 or training_args.local_rank == -1:
-            model.config.save_pretrained(training_args.output_dir)
-            model.save_pretrained(training_args.output_dir, state_dict=state_dict)
-            torch.save(non_lora_state_dict, os.path.join(training_args.output_dir, 'non_lora_trainables.bin'))
+    if training_args.lora_enable and (training_args.local_rank == 0 or training_args.local_rank == -1):
+        output_dir = training_args.output_dir
+        try:
+            state_dict = get_peft_state_maybe_zero_3(model.named_parameters(), training_args.lora_bias)
+            non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.named_parameters())
+            model.config.save_pretrained(output_dir)
+            model.save_pretrained(output_dir, state_dict=state_dict)
+            torch.save(non_lora_state_dict, os.path.join(output_dir, 'non_lora_trainables.bin'))
+        except Exception as e:
+            import traceback
+            log_path = os.path.join(output_dir, 'final_save_error.txt')
+            with open(log_path, 'w') as f:
+                f.write(str(e) + '\n')
+                f.write(traceback.format_exc())
+            # Fallback: build adapter_model.bin and non_lora_trainables.bin from latest checkpoint
+            ckpt_dirs = sorted(pathlib.Path(output_dir).glob('checkpoint-*'), key=lambda p: int(p.name.split('-')[1]))
+            if ckpt_dirs:
+                last_ckpt = ckpt_dirs[-1]
+                finetune_path = last_ckpt / 'finetune_weights.bin'
+                if finetune_path.exists():
+                    weights = torch.load(finetune_path, map_location='cpu')
+                    adapter_dict = {k: v for k, v in weights.items() if 'lora_' in k}
+                    non_lora_dict = {k: v for k, v in weights.items() if 'lora_' not in k}
+                    if adapter_dict:
+                        torch.save(adapter_dict, os.path.join(output_dir, 'adapter_model.bin'))
+                    if non_lora_dict:
+                        torch.save(non_lora_dict, os.path.join(output_dir, 'non_lora_trainables.bin'))
+                    with open(log_path, 'a') as f:
+                        f.write(f'\nFallback: wrote adapter/non_lora from {last_ckpt}\n')
+                else:
+                    raise
+            else:
+                raise
 
 
 if __name__ == "__main__":
     train()
-
 
 

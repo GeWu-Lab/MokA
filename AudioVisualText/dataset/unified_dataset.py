@@ -54,7 +54,6 @@ class UnifiedDataset(Dataset):
         
         print(f'tot training sample nums: {self.tot}')
 
-
     def add_avqa_task_samples(self):
         avqa_annotation_path = 'MUSIC_AVQA_data/train_samples_with_reasoning_avqa.json'
         tot = 0

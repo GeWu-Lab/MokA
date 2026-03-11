@@ -97,6 +97,18 @@ class TrainingArguments(transformers.TrainingArguments):
     ## my
     reserved_modality: str = field(default=None)
     loramethod: str = field(default=None)
+    cross_attn_kv_mode: str = field(
+        default="question",
+        metadata={"help": "Cross-attn KV source for LoRA branches: question or full_text."},
+    )
+    cross_modal_mode: str = field(
+        default="trilinear",
+        metadata={"help": "Cross-modal fusion mode for LoRA: pairwise or trilinear."},
+    )
+    trilinear_pack_tokens: bool = field(
+        default=False,
+        metadata={"help": "If True, compact active tokens before Triton trilinear attention."},
+    )
     blc_alpha: float = field(default=0.5)
     blc_weight: float = field(default=0.5)
 
@@ -106,3 +118,9 @@ class TrainingArguments(transformers.TrainingArguments):
     save_modules: str = field(default='vl_projector,al_projector,lora')
 
     exp_desc: str = field(default='exp')
+
+    # Gradient sensitivity analysis toggles.
+    # When enabled, UnifiedTrainer logs per-modality gradient statistics for
+    # LoRA branches (text/visual/audio A, shared B) and optional projectors.
+    grad_sensitivity_enable: bool = field(default=False)
+    grad_sensitivity_include_projectors: bool = field(default=True)

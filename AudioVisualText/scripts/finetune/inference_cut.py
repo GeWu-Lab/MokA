@@ -19,10 +19,22 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 import transformers
 
+import json
+
 from configs.unified_config import ModelArguments,DataArguments,TrainingArguments,InferenceArguments
 
 from dataset.unified_dataset import get_dataset_collator
 from utils.util import set_seed,find_all_linear_names,prepare_sample,write2json,load_ckpt
+
+
+def _load_ckpt_config(ckpt_dir):
+    """Load adapter_config.json from checkpoint. Used to ensure inference uses the same
+    cross_attn_kv_mode/cross_modal_mode as training (avoids train/inference mismatch)."""
+    path = join(ckpt_dir, "adapter_config.json")
+    if not exists(path):
+        return {}
+    with open(path) as f:
+        return json.load(f)
 from utils.deepspeed_utils import *
 
 local_rank = None
@@ -55,6 +67,8 @@ def inference(dataloader,ckpt_dir,model,tokenizer,task):
     os.makedirs(save_dir,exist_ok=True)
     pbar = tqdm(total=len(dataloader),desc=f'inference {task}')
     fp = join(save_dir,f'inference_{task}.jsonl')
+    if exists(fp):
+        os.remove(fp)
     for step, sample in enumerate(dataloader):
         batch_metadata = sample.pop('batch_metadata')
         bs = len(batch_metadata)
@@ -80,10 +94,9 @@ def inference(dataloader,ckpt_dir,model,tokenizer,task):
 
 def train(attn_implementation=None):
     global local_rank
-    set_seed(42)
-
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments, InferenceArguments))
     model_args, data_args, training_args, infer_args = parser.parse_args_into_dataclasses()
+    set_seed(training_args.seed)
 
     if model_args.llm_name == 'llama':
         d_model = 4096
@@ -121,8 +134,15 @@ def train(attn_implementation=None):
             model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
     if training_args.lora_enable:
-        from peft_hyper import LoraConfig,get_peft_model
-        lora_trainable="q_proj,k_proj,v_proj,o_proj,gate_proj,down_proj,up_proj"
+        from peft_hyper import LoraConfig, get_peft_model
+        # Load checkpoint's adapter config so inference matches training (avoids KV mode mismatch)
+        ckpt_dir = infer_args.ckpt_dir
+        ckpt_config = _load_ckpt_config(ckpt_dir)
+        cross_attn_kv_mode = ckpt_config.get("cross_attn_kv_mode") or training_args.cross_attn_kv_mode
+        cross_modal_mode = ckpt_config.get("cross_modal_mode") or training_args.cross_modal_mode
+        if ckpt_config:
+            print(f"Using checkpoint config: cross_attn_kv_mode={cross_attn_kv_mode}, cross_modal_mode={cross_modal_mode}")
+        lora_trainable = "q_proj,k_proj,v_proj,o_proj,gate_proj,down_proj,up_proj"
         target_modules = lora_trainable.split(',')
         lora_rank = training_args.lora_r
         lora_alpha = 16
@@ -130,17 +150,19 @@ def train(attn_implementation=None):
         lora_nums = int(len(str(training_args.lora_r)))
         modules_to_save = None
         peft_config = LoraConfig(
-            task_type = "CAUSAL_LM",
-            target_modules = target_modules,
-            inference_mode = False,
-            r = lora_rank, 
-            loramethod= training_args.loramethod,
+            task_type="CAUSAL_LM",
+            target_modules=target_modules,
+            inference_mode=False,
+            r=lora_rank,
+            loramethod=training_args.loramethod,
             reserved_modality=training_args.reserved_modality,
-            lora_alpha = lora_alpha,
-            lora_dropout = lora_dropout,
-            lora_nums = lora_nums,
-            blc_alpha= training_args.blc_alpha,
-            blc_weight=training_args.blc_weight,
+            cross_attn_kv_mode=cross_attn_kv_mode,
+            cross_modal_mode=cross_modal_mode,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            lora_nums=lora_nums,
+            blc_alpha=ckpt_config.get("blc_alpha", training_args.blc_alpha),
+            blc_weight=ckpt_config.get("blc_weight", training_args.blc_weight),
         )
         model = get_peft_model(model, peft_config)
 
@@ -208,4 +230,3 @@ def train(attn_implementation=None):
 
 if __name__ == "__main__":
     train()
-

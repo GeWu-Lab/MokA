@@ -1,0 +1,281 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+\title{MokA: Forward/Backward Math From Code}
+\author{Derived directly from repository implementation}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Scope and Grounding}
+This note is derived from these files:
+\begin{itemize}
+\item \texttt{models/unified\_arch.py}: multimodal embedding and modality masks.
+\item \texttt{models/modeling\_llama.py}: masked LoRA projections used by attention/MLP and LM loss.
+\item \texttt{peft\_hyper/tuners/lora.py}: custom \texttt{Linear} with \texttt{lora\_A0/A1/A2} and shared \texttt{lora\_B0}.
+\item \texttt{scripts/finetune/finetune.py}: which modules are wrapped and which parameters are trainable.
+\item \texttt{trainer.py}: gradient-sensitivity metric definitions.
+\end{itemize}
+
+\section{Notation and Shapes}
+Per adapted linear layer:
+\begin{itemize}
+\item Input: $X \in \mathbb{R}^{B\times T\times d_{\text{in}}}$.
+\item Base weight: $W_0 \in \mathbb{R}^{d_{\text{out}}\times d_{\text{in}}}$, bias $b$.
+\item LoRA branch matrices:
+\[
+A_0\in\mathbb{R}^{r\times d_{\text{in}}},\quad
+A_1\in\mathbb{R}^{r\times d_{\text{in}}},\quad
+A_2\in\mathbb{R}^{r\times d_{\text{in}}},\quad
+B_0\in\mathbb{R}^{d_{\text{out}}\times r}.
+\]
+\item Scale $s=\alpha/r$ (code uses \texttt{self.scaling[0]} for all branches).
+\item Binary masks from input construction:
+\[
+M_t,M_v,M_a,M_q\in\{0,1\}^{B\times T\times 1}.
+\]
+\end{itemize}
+
+\paragraph{Important implementation constraint.}
+In code, \texttt{r} is parsed digit-wise (\texttt{str(r)}), and branch outputs are later summed. Therefore branch ranks must match in practice (or the sum would fail).
+
+\section{Multimodal Input Construction}
+The model builds one embedding sequence and four aligned masks:
+\[
+E\in\mathbb{R}^{B\times T\times d_{\text{model}}},\quad
+M_t,M_v,M_a,M_q\in\{0,1\}^{B\times T\times 1}.
+\]
+Text tokens map through token embedding; image/video/audio special tokens are replaced by projector features; labels for non-text inserted modal features are set to $-100$ (ignored in CE). Then sequences are left-padded to common $T$.
+
+\section{Forward: One Adapted Linear Layer}
+PyTorch linear convention is
+\[
+Y_{\text{base}} = XW_0^\top + b.
+\]
+
+Define masked inputs:
+\[
+X_t=X\odot M_t,\quad X_v=X\odot M_v,\quad X_a=X\odot M_a.
+\]
+With dropout operator $D(\cdot)$:
+\[
+U_i = s\,A_i(D(X_i)),\quad i\in\{0,1,2\},
+\]
+where $A_i(\cdot)$ means linear map with weight $A_i$.
+
+\subsection{Cross-modal branch coupling}
+For each sample $b$, video branch:
+\[
+Q_v=U_1^{(b)},\quad K_q=V_q=U_0^{(b)}\odot M_q^{(b)},
+\]
+\[
+S_v=\operatorname{softmax}\!\left(\frac{Q_vK_q^\top}{\sqrt{r}}\right),\quad
+O_v=S_vV_q,
+\]
+\[
+\widetilde U_1^{(b)} = U_1^{(b)} + \beta\,(M_v^{(b)}\odot O_v),
+\]
+with $\beta=\texttt{blc\_weight}$.
+
+Similarly for audio:
+\[
+\widetilde U_2^{(b)} = U_2^{(b)} + \beta\,(M_a^{(b)}\odot O_a),
+\]
+where $O_a$ uses query $U_2^{(b)}$ and key/value from question slice of $U_0^{(b)}$.
+
+Then
+\[
+U_{\Sigma}=U_0+\widetilde U_1+\widetilde U_2,\qquad
+Y_{\text{lora}} = B_0(U_{\Sigma}),
+\]
+and final layer output:
+\[
+Y = Y_{\text{base}} + Y_{\text{lora}}.
+\]
+
+\paragraph{What does ``$B$ multiply $A$'' mean?}
+Ignoring masking/cross-attn and using one branch:
+\[
+Y_{\text{lora},i}=B_0\big(sA_i(X_i)\big)
+= X_i(s\,B_0A_i)^\top.
+\]
+So the effective low-rank update to base weight is
+\[
+\Delta W_i = s\,B_0A_i,\quad
+W_{\text{eff}} = W_0 + \sum_i \Delta W_i.
+\]
+
+\section{Where It Is Used}
+The wrapped linear layers are injected into
+\[
+\{q\_proj,k\_proj,v\_proj,o\_proj,gate\_proj,up\_proj,down\_proj\}
+\]
+across decoder layers. In attention and MLP forward passes, modality masks are passed to these projections.
+
+\section{Language Modeling Loss}
+Given logits $Z\in\mathbb{R}^{B\times T\times V}$ and labels $y$:
+\[
+Z_{\text{shift}}=Z_{:,1:T-1,:},\quad
+y_{\text{shift}}=y_{:,2:T}.
+\]
+Loss is cross-entropy over flattened tokens with ignore index $-100$:
+\[
+\mathcal L = -\frac{1}{N_{\text{valid}}}\sum_{n\in\mathcal I}
+\log\operatorname{softmax}(Z_n)_{y_n}.
+\]
+
+\section{Backward Propagation}
+\subsection{From CE to logits}
+For each valid token row $n$:
+\[
+\frac{\partial \mathcal L}{\partial Z_n}
+=
+\frac{1}{N_{\text{valid}}}\left(\operatorname{softmax}(Z_n)-e_{y_n}\right),
+\]
+and $0$ for ignored rows.
+
+\subsection{Adapter local gradients}
+Let $G=\partial\mathcal L/\partial Y_{\text{lora}}$.
+For $Y_{\text{lora}}=B_0(U_{\Sigma})$:
+\[
+\frac{\partial\mathcal L}{\partial B_0}
+=
+\sum_{b,t} G_{b,t}^{\top}\,U_{\Sigma,b,t},
+\qquad
+\frac{\partial\mathcal L}{\partial U_{\Sigma}}
+=
+G\,B_0.
+\]
+
+Define split upstreams:
+\[
+G_0=\frac{\partial\mathcal L}{\partial U_0},\;
+G_1=\frac{\partial\mathcal L}{\partial U_1},\;
+G_2=\frac{\partial\mathcal L}{\partial U_2},
+\]
+where $G_1,G_2$ include direct residual path and query-through-attention path.
+
+For branch $i$ with $U_i=s\,A_i(D(X_i))$:
+\[
+\frac{\partial\mathcal L}{\partial A_i}
+=
+s\sum_{b,t} G_{i,b,t}^{\top}\,D(X_{i,b,t}).
+\]
+This gives explicitly:
+\[
+\boxed{
+\frac{\partial\mathcal L}{\partial A_1}
+=
+s\sum_{b,t} G_{1,b,t}^{\top}\,D(X_{v,b,t})
+}
+\]
+\[
+\boxed{
+\frac{\partial\mathcal L}{\partial A_2}
+=
+s\sum_{b,t} G_{2,b,t}^{\top}\,D(X_{a,b,t})
+}
+\]
+with
+\[
+X_v=X\odot M_v,\quad X_a=X\odot M_a.
+\]
+
+\paragraph{What is inside $G_1,G_2$?}
+For video (analogous audio):
+\[
+\widetilde U_1 = U_1 + \beta(M_v\odot O_v),\quad O_v=\text{Attn}(U_1,U_0\odot M_q,U_0\odot M_q).
+\]
+Hence
+\[
+\frac{\partial\mathcal L}{\partial U_1}
+=
+\frac{\partial\mathcal L}{\partial \widetilde U_1}
+\left[
+I
++
+\beta\,\frac{\partial (M_v\odot O_v)}{\partial U_1}
+\right].
+\]
+So $A_1$ receives gradient from both:
+\begin{itemize}
+\item direct residual term ($I$),
+\item attention-query Jacobian term.
+\end{itemize}
+
+\subsection{How many gradients are there?}
+Per adapted linear module, there are parameter-gradient tensors:
+\[
+\frac{\partial\mathcal L}{\partial A_0},\;
+\frac{\partial\mathcal L}{\partial A_1},\;
+\frac{\partial\mathcal L}{\partial A_2},\;
+\frac{\partial\mathcal L}{\partial B_0}
+\]
+(plus any trainable non-LoRA parameters you kept in \texttt{save\_modules}).
+
+If $N_{\text{adapt}}$ modules are wrapped, LoRA matrix-gradient tensor count is:
+\[
+4N_{\text{adapt}}.
+\]
+With current target list (7 projections per decoder layer), for $L$ layers:
+\[
+N_{\text{adapt}} = 7L,\quad \text{LoRA gradient tensors}=28L.
+\]
+
+\section{What Gets Updated}
+\begin{itemize}
+\item Base wrapped weight is frozen in custom \texttt{Linear} (\texttt{weight.requires\_grad=False}).
+\item \texttt{mark\_only\_lora\_as\_trainable} first disables non-LoRA params.
+\item Then finetune script applies final filter: a parameter is trainable iff its name contains one of \texttt{save\_modules}.
+\end{itemize}
+So the \emph{actual} update set is:
+\[
+\Theta_{\text{update}}=\{\theta:\texttt{requires\_grad}(\theta)=\texttt{True after final filter}\}.
+\]
+
+\section{Optimizer Update (conceptual)}
+For each $\theta\in\Theta_{\text{update}}$, AdamW-style step:
+\[
+m_t=\beta_1m_{t-1}+(1-\beta_1)g_t,\quad
+v_t=\beta_2v_{t-1}+(1-\beta_2)g_t^2,
+\]
+\[
+\hat m_t=\frac{m_t}{1-\beta_1^t},\quad
+\hat v_t=\frac{v_t}{1-\beta_2^t},
+\]
+\[
+\theta_{t+1}=\theta_t-\eta\left(\frac{\hat m_t}{\sqrt{\hat v_t}+\epsilon}+\lambda\theta_t\right).
+\]
+
+\section{Gradient Sensitivity Metrics in Trainer}
+For each group $g\in\{\text{A0,A1,A2,B0,projectors}\}$:
+\[
+G_g^2 = \sum_{\theta\in g}\left\|\frac{\partial\mathcal L}{\partial\theta}\right\|_F^2,\quad
+P_g^2 = \sum_{\theta\in g}\|\theta\|_F^2,
+\]
+\[
+\text{grad\_norm}_g=\sqrt{G_g^2},\quad
+\text{param\_norm}_g=\sqrt{P_g^2},\quad
+\text{relative\_grad\_norm}_g=\frac{\text{grad\_norm}_g}{\text{param\_norm}_g+\varepsilon}.
+\]
+These are exactly what hooks/logging in \texttt{trainer.py} compute.
+
+\section{Code-to-Math Trace Checklist}
+For any adapted layer in your run:
+\begin{enumerate}
+\item Build $X,M_t,M_v,M_a,M_q$ from packed multimodal input.
+\item Compute base output $XW_0^\top+b$.
+\item Compute three masked low-rank branch outputs $U_0,U_1,U_2$.
+\item Fuse question-conditioned information into video/audio branches.
+\item Sum branches, project by shared $B_0$, add to base.
+\item Continue through attention/MLP/stack, then LM head and shifted CE.
+\item Backprop: CE $\rightarrow$ logits $\rightarrow$ decoder $\rightarrow$ each adapted linear:
+      obtain $\partial\mathcal L/\partial A_0,\partial\mathcal L/\partial A_1,\partial\mathcal L/\partial A_2,\partial\mathcal L/\partial B_0$.
+\item Optimizer updates only parameters still marked trainable.
+\end{enumerate}
+
+\end{document}

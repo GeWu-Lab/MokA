@@ -1,5 +1,6 @@
 # Adopted from: https://github.com/haotian-liu/LLaVA/blob/main/llava/train/llava_trainer.py
 import os
+import json
 from typing import List, Optional, Union, Any, Mapping
 
 import torch
@@ -161,6 +162,148 @@ class LengthGroupedSampler(Sampler):
 
 
 class UnifiedTrainer(Trainer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._grad_sens_latest: Optional[Mapping[str, float]] = None
+        self._grad_sens_jsonl_path: Optional[str] = None
+        self._grad_sens_last_logged_step: int = -1
+        self._grad_sens_hook_handles = []
+        self._grad_sens_hooked_model_id: Optional[int] = None
+        self._grad_sens_step_g2 = {}
+
+    def _grad_sensitivity_enabled(self) -> bool:
+        return bool(getattr(self.args, "grad_sensitivity_enable", False))
+
+    def _grad_group_name(self, param_name: str) -> Optional[str]:
+        """
+        Map parameter names to analysis groups.
+        LoRA branch mapping is based on this project's custom LoRA implementation:
+        - lora_A0: text branch
+        - lora_A1: visual branch
+        - lora_A2: audio branch
+        - lora_B0: shared projection
+        """
+        if "lora_A0" in param_name:
+            return "lora_A_text"
+        if "lora_A1" in param_name:
+            return "lora_A_visual"
+        if "lora_A2" in param_name:
+            return "lora_A_audio"
+        if "lora_B0" in param_name:
+            return "lora_B_shared"
+
+        if getattr(self.args, "grad_sensitivity_include_projectors", True):
+            if "vl_projector" in param_name:
+                return "vl_projector"
+            if "al_projector" in param_name:
+                return "al_projector"
+        return None
+
+    def _ensure_grad_sensitivity_hooks(self, model: nn.Module) -> None:
+        """
+        Register backward hooks once on the active training model.
+        This is more reliable than reading param.grad directly under DeepSpeed/ZeRO.
+        """
+        model_id = id(model)
+        if self._grad_sens_hooked_model_id == model_id and self._grad_sens_hook_handles:
+            return
+
+        for handle in self._grad_sens_hook_handles:
+            handle.remove()
+        self._grad_sens_hook_handles = []
+        self._grad_sens_hooked_model_id = model_id
+        self._grad_sens_step_g2 = {}
+
+        for name, param in model.named_parameters():
+            group = self._grad_group_name(name)
+            if group is None or not param.requires_grad:
+                continue
+            self._grad_sens_step_g2.setdefault(group, 0.0)
+
+            def _make_hook(group_name):
+                def _hook(grad):
+                    if grad is None:
+                        return
+                    g = grad.detach().float()
+                    self._grad_sens_step_g2[group_name] += float((g * g).sum().item())
+                return _hook
+
+            self._grad_sens_hook_handles.append(param.register_hook(_make_hook(group)))
+
+    def _reset_grad_sensitivity_step_accumulator(self) -> None:
+        for group in list(self._grad_sens_step_g2.keys()):
+            self._grad_sens_step_g2[group] = 0.0
+
+    def _collect_grad_sensitivity(self, model: nn.Module) -> Mapping[str, float]:
+        eps = 1e-12
+        # Floor used to stabilize relative-grad metric when a group starts near zero
+        # (e.g., LoRA B matrices initialized to zeros).
+        param_norm_floor = float(getattr(self.args, "grad_sensitivity_param_norm_floor", 1e-2))
+        accum = {}
+        for name, param in model.named_parameters():
+            group = self._grad_group_name(name)
+            if group is None:
+                continue
+            if group not in accum:
+                accum[group] = {"p2": 0.0, "n": 0}
+
+            # Parameter norm is always tracked when present for scale reference.
+            p = param.detach().float()
+            accum[group]["p2"] += float((p * p).sum().item())
+            accum[group]["n"] += int(param.numel())
+
+        metrics = {}
+        for group, vals in accum.items():
+            # Gradient norm comes from backward hooks (more robust in ZeRO setups).
+            # NOTE: hook accumulation is already per-group, so read it once here.
+            g2 = float(self._grad_sens_step_g2.get(group, 0.0))
+            grad_norm = g2 ** 0.5
+            param_norm = vals["p2"] ** 0.5
+            # Size-normalized gradient scale (independent of parameter magnitude).
+            grad_rms = grad_norm / ((vals["n"] ** 0.5) + eps)
+            # Original relative gradient norm.
+            rel_grad_norm = grad_norm / (param_norm + eps)
+            # Stabilized relative metric to reduce denominator-near-zero inflation.
+            rel_grad_norm_floored = grad_norm / (max(param_norm, param_norm_floor) + eps)
+            metrics[f"grad_sens/{group}_grad_norm"] = grad_norm
+            metrics[f"grad_sens/{group}_grad_rms"] = grad_rms
+            metrics[f"grad_sens/{group}_param_norm"] = param_norm
+            metrics[f"grad_sens/{group}_relative_grad_norm"] = rel_grad_norm
+            metrics[f"grad_sens/{group}_relative_grad_norm_floored"] = rel_grad_norm_floored
+            metrics[f"grad_sens/{group}_num_params"] = float(vals["n"])
+        return metrics
+
+    def _append_grad_sensitivity_jsonl(self, metrics: Mapping[str, float]) -> None:
+        if not self.is_world_process_zero():
+            return
+        if self._grad_sens_jsonl_path is None:
+            self._grad_sens_jsonl_path = os.path.join(self.args.output_dir, "grad_sensitivity.jsonl")
+        payload = {"step": int(self.state.global_step), "epoch": float(self.state.epoch or 0.0)}
+        payload.update(metrics)
+        with open(self._grad_sens_jsonl_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload) + "\n")
+
+    def training_step(self, model: nn.Module, inputs: Mapping[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
+        if self._grad_sensitivity_enabled():
+            self._ensure_grad_sensitivity_hooks(model)
+            self._reset_grad_sensitivity_step_accumulator()
+        loss = super().training_step(model, inputs)
+        if self._grad_sensitivity_enabled():
+            # Capture per-step grad statistics accumulated by hooks during backward.
+            self._grad_sens_latest = self._collect_grad_sensitivity(model)
+        return loss
+
+    def log(self, logs: Mapping[str, float]) -> None:
+        logs = dict(logs)
+        if (
+            self._grad_sensitivity_enabled()
+            and self._grad_sens_latest is not None
+            and self.state.global_step != self._grad_sens_last_logged_step
+        ):
+            logs.update(self._grad_sens_latest)
+            self._append_grad_sensitivity_jsonl(self._grad_sens_latest)
+            self._grad_sens_last_logged_step = int(self.state.global_step)
+        super().log(logs)
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
         if self.train_dataset is None or not has_length(self.train_dataset):
@@ -219,9 +362,9 @@ class UnifiedTrainer(Trainer):
 
         # Save optimizer and scheduler
         # self._save_optimizer_and_scheduler(output_dir)
-        # # Save RNG state
         # self._save_rng_state(output_dir)
-        # self.state.save_to_json(os.path.join(output_dir, TRAINER_STATE_NAME))
+        if self.args.local_rank == 0 or self.args.local_rank == -1:
+            self.state.save_to_json(os.path.join(output_dir, TRAINER_STATE_NAME))
         # self.args.distributed_state.wait_for_everyone()
         # else:
         #     super(VideoLLaMA2Trainer, self)._save_checkpoint(model, trial, metrics)

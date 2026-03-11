@@ -149,7 +149,7 @@ class UnifiedMetaForCausalLM(ABC):
             pre_indice=0
             for idx,indice in enumerate(X_token_indices):
                 special_token = self.IDS_2_SPECIAL_TOKEN[input_ids[indice].item()]
-
+  
                 if special_token == '<question_end>':
                     # token size * emb size
                     tmp=self.encode_ids(input_ids[pre_indice:indice])

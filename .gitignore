@@ -1,0 +1,17 @@
+# Python cache/artifacts
+__pycache__/
+*.pyc
+
+# Local datasets and weights
+AudioVisualText/AVE_data/
+AudioVisualText/pre-trained/
+AudioVisualText/google-bert-base-uncased/
+
+# Local outputs/logs
+AudioVisualText/results/
+AudioVisualText/slurm-*.out
+AudioVisualText/slurm-*.err
+
+# Local helper scripts
+AudioVisualText/run_infer_ave.sbatch
+AudioVisualText/run_ft_ave.sbatch
